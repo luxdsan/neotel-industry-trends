@@ -15,7 +15,8 @@ export async function onRequest(context: AgentContext): Promise<Response> {
   const body = getBody(context);
   const runId = context?.run_id || `run_${randomUUID().slice(0, 12)}`;
   const trigger = body._schedule ? 'schedule' : body.trigger || 'manual';
-  const sources = Array.isArray(body.sources) ? body.sources : ['hackernews', 'devto', 'web'];
+  // `sources` = list of source ids from _source_list.ts, or ['all'] (default).
+  const sources = Array.isArray(body.sources) && body.sources.length ? body.sources : ['all'];
   const limit = Number(body.limit || 30);
   const started = Date.now();
   const signal = context?.request?.signal as AbortSignal | undefined;

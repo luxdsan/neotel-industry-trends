@@ -1,48 +1,25 @@
+/**
+ * Fetch layer — turns the source list (_source_list.ts) into TrendSourceItem candidates.
+ *
+ *   rss  → fetch() + parseFeed() (RSS 2.0 / Atom, regex based, no dependencies)
+ *   html → sandbox browser (goto + evaluate) when available, otherwise fetch() + anchor regex
+ *
+ * Nothing here calls a model. All network failures degrade to "0 items from that source"
+ * and are logged so the 5-day trial (plan A5) can prune the list.
+ */
+
+import { INDUSTRY_KEYWORDS, SOURCES, enabledSources, type TopicName, type TrendSource } from './_source_list.js';
 import type { TrendSourceItem } from './_types.js';
 
-export const AI_KEYWORDS = [
-  'ai',
-  'agent',
-  'agents',
-  'llm',
-  'large language model',
-  'openai',
-  'anthropic',
-  'claude',
-  'gemini',
-  'deepseek',
-  'langchain',
-  'langgraph',
-  'deepagents',
-  'multimodal',
-  'open source model',
-  'inference',
-  'rag',
-  'vector database',
-  'model context protocol',
-  'mcp',
-  // Chinese keywords
-  '人工智能',
-  '大模型',
-  '大语言模型',
-  '智能体',
-  '多模态',
-  '开源模型',
-  '向量数据库',
-  '机器学习',
-  '深度学习',
-  '生成式',
-  'ai agent',
-  'ai应用',
-  'ai工具',
-];
+export const TOPICS: TopicName[] = ['设备', '材料', '供应链', '政策标准', '展会', '厂商动态'];
 
-const CATEGORY_KEYWORDS: Record<string, string[]> = {
-  'AI Agent': ['agent', 'agents', 'langgraph', 'deepagents', 'mcp', 'tool calling'],
-  LLM: ['llm', 'large language model', 'openai', 'anthropic', 'claude', 'gemini', 'deepseek'],
-  Multimodal: ['multimodal', 'vision', 'audio', 'video', 'image generation'],
-  'Open Source Model': ['open source', 'hugging face', 'weights', 'model release'],
-  'AI Infra': ['inference', 'gpu', 'vector', 'rag', 'latency', 'serving', 'deployment'],
+const TOPIC_KEYWORDS: Record<TopicName, string[]> = {
+  设备: ['placement', 'pick-and-place', 'pick and place', 'reflow', 'aoi', 'spi', 'x-ray', 'printer', 'inspection', 'machine', 'equipment', 'feeder', 'mounter', '贴片机', '回流焊', '印刷机', '检测', '设备', 'x射线', '点料', '料仓', '机器'],
+  材料: ['solder', 'paste', 'flux', 'laminate', 'copper', 'substrate', 'material', 'stencil', '焊膏', '锡膏', '覆铜板', '材料', '基板', '载板', '钢网', '助焊剂', 'pcb', '线路板', '电路板'],
+  供应链: ['supply', 'shortage', 'inventory', 'distributor', 'tariff', 'export control', 'logistics', 'price', 'capacity', '供应链', '缺货', '库存', '分销', '关税', '出口管制', '产能', '涨价', '交期', 'ems', '代工'],
+  政策标准: ['ipc-', 'j-std', 'standard', 'regulation', 'policy', 'subsidy', 'directive', 'rohs', 'reach', '标准', '政策', '法规', '补贴', '规范', '指令', '协会'],
+  展会: ['expo', 'exhibition', 'show', 'conference', 'summit', 'nepcon', 'productronica', 'apex', 'smtconnect', '展会', '展览', '博览', '论坛', '峰会', '大会'],
+  厂商动态: ['launch', 'announce', 'partnership', 'acquire', 'acquisition', 'appoint', 'opens', 'facility', 'invest', '发布', '推出', '合作', '收购', '任命', '投资', '扩产', '新厂', '签约'],
 };
 
 function nowIso(): string {
@@ -51,12 +28,16 @@ function nowIso(): string {
 
 export function cleanText(value: unknown): string {
   return String(value || '')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
     .replace(/&#x2F;/g, '/')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ')
     .replace(/<[^>]+>/g, ' ')
     .replace(/https?:\/\/\S+/g, ' ')
     .replace(/\s+/g, ' ')
@@ -68,254 +49,300 @@ function isUrlOnly(value: string): boolean {
   return !compact || /^https?:\/\/\S+$/.test(compact);
 }
 
-export function buildFallbackAiSummary(item: TrendSourceItem): string {
-  const cleanedSummary = cleanText(item.summary);
-  if (cleanedSummary && !isUrlOnly(cleanedSummary) && cleanedSummary.length >= 24) {
-    return cleanedSummary.slice(0, 220);
-  }
-  const title = cleanText(item.title) || '该动态';
-  const category = item.category || inferCategory(item);
-  return `${category} 动态：${title}。`;
-}
-
-async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { headers: { 'User-Agent': 'EdgeOne-Agent-AI-Trends-Node/1.0' } });
-  if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
-  return await res.json() as T;
-}
-
 export function normalizeText(item: TrendSourceItem): string {
   return [item.title, item.summary, item.url].filter(Boolean).join(' ').toLowerCase();
 }
 
-export function inferCategory(item: TrendSourceItem): string {
+export function inferTopic(item: TrendSourceItem, fallback: TopicName = '厂商动态'): TopicName {
   const text = normalizeText(item);
-  for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
-    if (keywords.some(keyword => text.includes(keyword))) return category;
+  let best: TopicName | null = null;
+  let bestHits = 0;
+  for (const topic of TOPICS) {
+    const hits = TOPIC_KEYWORDS[topic].filter(k => text.includes(k)).length;
+    if (hits > bestHits) { best = topic; bestHits = hits; }
   }
-  return 'AI Industry';
+  return best ?? fallback;
 }
 
-export function filterAiItems(items: TrendSourceItem[], keywords: string[] = AI_KEYWORDS): TrendSourceItem[] {
-  const activeKeywords = keywords.map(keyword => keyword.toLowerCase());
+/** Kept for backward compatibility with the template's report helpers. */
+export function inferCategory(item: TrendSourceItem): string {
+  return inferTopic(item);
+}
+
+export function buildFallbackAiSummary(item: TrendSourceItem): string {
+  const cleanedSummary = cleanText(item.summary);
+  if (cleanedSummary && !isUrlOnly(cleanedSummary) && cleanedSummary.length >= 16) {
+    return cleanedSummary.slice(0, 80);
+  }
+  const title = cleanText(item.title) || '该动态';
+  return title.slice(0, 80);
+}
+
+export function matchesIndustry(item: TrendSourceItem, keywords: string[] = INDUSTRY_KEYWORDS): boolean {
+  const text = normalizeText(item);
+  return keywords.some(keyword => text.includes(keyword.toLowerCase()));
+}
+
+/**
+ * Apply the industry keyword gate + per-source mustMatch, dedupe by URL, attach a topic
+ * guess and a code-generated summary fallback. Vertical sources (keywordFilter=false)
+ * skip the keyword gate but still get dedupe/topic/summary treatment.
+ */
+export function filterIndustryItems(items: TrendSourceItem[], source?: TrendSource, keywords: string[] = INDUSTRY_KEYWORDS): TrendSourceItem[] {
   const seen = new Set<string>();
+  const must = source?.mustMatch ? new RegExp(source.mustMatch, 'i') : null;
   const filtered: TrendSourceItem[] = [];
 
   for (const item of items) {
-    const text = normalizeText(item);
-    if (!activeKeywords.some(keyword => text.includes(keyword))) continue;
+    if (!item.title || !item.url) continue;
+    const applyGate = source ? source.keywordFilter : true;
+    if (applyGate && !matchesIndustry(item, keywords)) continue;
+    if (must && !must.test(`${item.title} ${item.summary || ''}`)) continue;
     const key = String(item.url || item.title || item.id).toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    const enriched = { ...item, summary: cleanText(item.summary), category: item.category ?? inferCategory(item) };
+    const enriched: TrendSourceItem = {
+      ...item,
+      summary: cleanText(item.summary),
+      category: item.category ?? inferTopic(item, source?.topicHint ?? '厂商动态'),
+    };
     filtered.push({ ...enriched, aiSummary: buildFallbackAiSummary(enriched) });
   }
-
   return filtered;
 }
 
-export async function collectHackerNews(limit = 20): Promise<TrendSourceItem[]> {
+// ── RSS / Atom ────────────────────────────────────────────────────────────────
+
+interface FeedEntry { title: string; url: string; publishedAt?: string; summary?: string }
+
+function pick(block: string, tag: string): string {
+  const m = block.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, 'i'));
+  return m ? m[1].trim() : '';
+}
+
+function toIso(value: string): string | undefined {
+  if (!value) return undefined;
+  const d = new Date(cleanText(value));
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
+/** Parse RSS 2.0 <item> or Atom <entry> blocks. Regex based — good enough for news feeds. */
+export function parseFeed(xml: string, baseUrl?: string): FeedEntry[] {
+  const blocks = xml.match(/<item(?:\s[^>]*)?>[\s\S]*?<\/item>|<entry(?:\s[^>]*)?>[\s\S]*?<\/entry>/gi) || [];
+  const entries: FeedEntry[] = [];
+  for (const block of blocks) {
+    const title = cleanText(pick(block, 'title'));
+    let url = cleanText(pick(block, 'link'));
+    if (!url) {
+      const alt = block.match(/<link[^>]*rel=["']alternate["'][^>]*href=["']([^"']+)["']/i) || block.match(/<link[^>]*href=["']([^"']+)["']/i);
+      url = alt ? alt[1] : '';
+    }
+    if (!url) {
+      const guid = cleanText(pick(block, 'guid'));
+      if (/^https?:\/\//.test(guid)) url = guid;
+    }
+    if (!title || !url) continue;
+    try { url = new URL(url, baseUrl).href; } catch { continue; }
+    const publishedAt = toIso(pick(block, 'pubDate') || pick(block, 'published') || pick(block, 'updated') || pick(block, 'dc:date'));
+    const summary = cleanText(pick(block, 'description') || pick(block, 'summary') || pick(block, 'content')).slice(0, 300);
+    entries.push({ title, url, publishedAt, summary });
+  }
+  return entries;
+}
+
+async function fetchText(url: string, timeoutMs = 15000): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const ids = (await fetchJson<number[]>('https://hacker-news.firebaseio.com/v0/topstories.json')).slice(0, limit);
-    const items: Array<TrendSourceItem | null> = await Promise.all(ids.map(async id => {
-      try {
-        const item = await fetchJson<Record<string, unknown>>(`https://hacker-news.firebaseio.com/v0/item/${id}.json`);
-        if (item.type !== 'story') return null;
-        const time = typeof item.time === 'number' ? new Date(item.time * 1000).toISOString() : nowIso();
-        return {
-          id: `hn_${id}`,
-          source: 'Hacker News',
-          title: String(item.title || 'Untitled'),
-          url: String(item.url || `https://news.ycombinator.com/item?id=${id}`),
-          score: typeof item.score === 'number' ? item.score : 0,
-          publishedAt: time,
-          summary: typeof item.text === 'string' ? item.text : '',
-        } satisfies TrendSourceItem;
-      } catch {
-        return null;
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; NeotelTrendBot/1.0; +https://www.neotel.tech)',
+        'Accept': 'application/rss+xml, application/atom+xml, text/html;q=0.9, */*;q=0.8',
+      },
+      signal: controller.signal,
+      redirect: 'follow',
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
+    return await res.text();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function itemId(sourceId: string, url: string): string {
+  return `${sourceId}_${Buffer.from(url).toString('base64url').slice(0, 24)}`;
+}
+
+export async function collectRss(source: TrendSource, limit = 20): Promise<TrendSourceItem[]> {
+  try {
+    const xml = await fetchText(source.url);
+    const entries = parseFeed(xml, source.url).slice(0, limit);
+    return entries.map(e => ({
+      id: itemId(source.id, e.url),
+      source: source.name,
+      title: e.title,
+      url: e.url,
+      score: 0,
+      publishedAt: e.publishedAt || nowIso(),
+      summary: e.summary || '',
+      category: source.topicHint,
+    }));
+  } catch (error) {
+    console.warn(`[rss] ${source.id} failed:`, error instanceof Error ? error.message : error);
+    return [];
+  }
+}
+
+// ── HTML list pages ───────────────────────────────────────────────────────────
+
+interface RawAnchor { title: string; url: string; summary?: string }
+
+/** Extract candidate article anchors from raw HTML (no-sandbox fallback). */
+export function extractAnchors(html: string, baseUrl: string, linkPattern?: string, limit = 40): RawAnchor[] {
+  const pattern = linkPattern ? new RegExp(linkPattern, 'i') : null;
+  const out: RawAnchor[] = [];
+  const seen = new Set<string>();
+  const re = /<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) && out.length < limit) {
+    const href = m[1].trim();
+    const text = cleanText(m[2]);
+    if (!text || text.length < 8 || text.length > 140) continue;
+    let abs: string;
+    try { abs = new URL(href, baseUrl).href; } catch { continue; }
+    if (pattern && !pattern.test(abs)) continue;
+    if (!pattern && new URL(abs).hostname !== new URL(baseUrl).hostname) continue;
+    if (seen.has(abs)) continue;
+    seen.add(abs);
+    out.push({ title: text, url: abs });
+  }
+  return out;
+}
+
+/** Browser-side extraction script (runs inside sandbox.browser.evaluate). */
+function buildExtractScript(linkPattern: string | undefined, limit: number): string {
+  const patternLiteral = JSON.stringify(linkPattern || '');
+  return `
+    JSON.stringify((() => {
+      const pat = ${patternLiteral} ? new RegExp(${patternLiteral}, 'i') : null;
+      const seen = new Set();
+      const out = [];
+      for (const a of Array.from(document.querySelectorAll('a[href]'))) {
+        const href = a.href || '';
+        if (!href.startsWith('http')) continue;
+        if (pat && !pat.test(href)) continue;
+        if (!pat && new URL(href).hostname !== location.hostname) continue;
+        const text = (a.textContent || '').replace(/\\s+/g, ' ').trim();
+        if (text.length < 8 || text.length > 140) continue;
+        if (seen.has(href)) continue;
+        seen.add(href);
+        const parent = a.closest('article, li, div, section') || a.parentElement;
+        const descEl = parent ? parent.querySelector('p, [class*="desc"], [class*="summary"], [class*="intro"]') : null;
+        const summary = descEl ? (descEl.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 200) : '';
+        out.push({ title: text, url: href, summary });
+        if (out.length >= ${limit}) break;
       }
-    }));
-    return items.filter((item): item is TrendSourceItem => Boolean(item));
-  } catch {
-    return [];
-  }
+      return out;
+    })())
+  `;
 }
 
-export async function collectDevto(limit = 20): Promise<TrendSourceItem[]> {
-  try {
-    const data = await fetchJson<Record<string, unknown>[]>(`https://dev.to/api/articles?tag=ai&per_page=${limit}`);
-    return data.slice(0, limit).map(article => ({
-      id: `devto_${String(article.id || article.path || article.url)}`,
-      source: 'Dev.to',
-      title: String(article.title || 'Untitled'),
-      url: String(article.url || 'https://dev.to'),
-      score: typeof article.public_reactions_count === 'number' ? article.public_reactions_count : 0,
-      publishedAt: typeof article.published_at === 'string' ? article.published_at : nowIso(),
-      summary: typeof article.description === 'string' ? article.description : '',
-    }));
-  } catch {
-    return [];
-  }
-}
-
-// ── Sandbox browser: scrape JS-rendered pages ──
-
-/** Default web sources that require sandbox to fetch */
-const DEFAULT_WEB_SOURCES = [
-  {
-    url: 'https://36kr.com/information/AI/',
-    source: '36kr',
-    // url: 'https://hellogithub.com/',
-    // source: 'GitHub',
-    method: 'browser' as const,
-    extractScript: `
-      JSON.stringify(
-        Array.from(document.querySelectorAll('a[href*="/p/"]')).slice(0, 40).map(a => {
-          const href = a.getAttribute('href') || '';
-          if (!href.match(/\\/p\\/\\d/)) return null;
-          const titleEl = a.querySelector('h2, h3, h4, [class*="title"], [class*="Title"]') || a;
-          const title = (titleEl.textContent || '').replace(/\\s+/g, ' ').trim();
-          if (!title || title.length < 6 || title.length > 100) return null;
-          const parent = a.closest('div, article, section') || a.parentElement;
-          const descEl = parent?.querySelector('p, [class*="desc"], [class*="summary"], [class*="subtitle"]');
-          const summary = descEl ? (descEl.textContent || '').trim().slice(0, 150) : '';
-          return { title, url: href, summary };
-        }).filter(Boolean).filter((item, i, arr) =>
-          arr.findIndex(x => x.url === item.url) === i
-        ).slice(0, 20)
-      );
-    `,
-  },
-];
-
-/**
- * Collect items from web pages via sandbox capabilities.
- * - method='browser': sandbox.browser.goto + evaluate (for JS-rendered SPAs)
- * - method='curl': sandbox.commands.run('curl ...') (for SSR pages)
- * Returns [] gracefully when sandbox is unavailable.
- */
-export async function collectFromWeb(
-  sandbox: unknown,
-  webSources: typeof DEFAULT_WEB_SOURCES = DEFAULT_WEB_SOURCES,
-  limit = 10,
-): Promise<TrendSourceItem[]> {
-  if (!sandbox || typeof sandbox !== 'object') return [];
-
-  const sbx = sandbox as {
-    browser?: {
-      goto(url: string, opts?: { waitUntil?: string }): Promise<{ success?: boolean; data?: unknown; error?: string }>;
-      evaluate(script: string): Promise<{ success?: boolean; data?: unknown; error?: string }>;
-    };
-    commands?: {
-      run(cmd: string, opts?: Record<string, unknown>): Promise<{ stdout?: string; stderr?: string; exitCode?: number }>;
-    };
+interface SandboxLike {
+  browser?: {
+    goto(url: string, opts?: { waitUntil?: string }): Promise<{ success?: boolean; data?: unknown; error?: string }>;
+    evaluate(script: string): Promise<{ success?: boolean; data?: unknown; error?: string }>;
   };
+}
 
-  const allItems: TrendSourceItem[] = [];
+export async function collectHtml(source: TrendSource, limit = 20, sandbox?: unknown): Promise<TrendSourceItem[]> {
+  let anchors: RawAnchor[] = [];
+  const sbx = sandbox as SandboxLike | null | undefined;
 
-  for (const ws of webSources) {
+  if (sbx?.browser && typeof sbx.browser.goto === 'function') {
     try {
-      if (ws.method === 'browser') {
-        // JS-rendered SPA: use sandbox browser
-        if (!sbx.browser || typeof sbx.browser.goto !== 'function') {
-          console.warn(`[sandbox-browser] browser not available, skipping ${ws.url}`);
-          continue;
-        }
-        console.log(`[sandbox-browser] navigating to ${ws.url}`);
-        const nav = await sbx.browser.goto(ws.url, { waitUntil: 'domcontentloaded' });
-        console.log(`[sandbox-browser] navigation result:`, JSON.stringify(nav));
-        if (nav?.error) {
-          console.warn(`[sandbox-browser] navigation failed for ${ws.url}: ${nav.error}`);
-          continue;
-        }
-
-        // Debug: dump what the browser actually sees
-        const debug = await sbx.browser.evaluate(`
-          JSON.stringify({
-            title: document.title,
-            headings: Array.from(document.querySelectorAll('h1,h2,h3,h4')).slice(0,5).map(h => h.textContent?.trim().slice(0,50)),
-            newsLinks: Array.from(document.querySelectorAll('a[href*="/news/"]')).slice(0,5).map(a => ({
-              href: a.getAttribute('href'),
-              text: a.textContent?.trim().slice(0,50),
-              inner: a.innerHTML?.slice(0,100)
-            }))
-          })
-        `);
-        console.log(`[sandbox-browser] page debug:`, typeof debug?.data === 'string' ? debug.data : JSON.stringify(debug?.data));
-
-        const result = await sbx.browser.evaluate(ws.extractScript!);
-        if (!result?.success || !result?.data) {
-          console.warn(`[sandbox-browser] evaluate failed for ${ws.url}: ${result?.error || 'no data'}`);
-          continue;
-        }
-        const rawItems: Array<{ title: string; url: string; score?: number; summary?: string }> = (() => {
-          const d = result.data;
-          if (typeof d === 'string') { try { return JSON.parse(d); } catch { return []; } }
-          return Array.isArray(d) ? d : [];
-        })();
-
-        for (let i = 0; i < Math.min(rawItems.length, limit); i++) {
-          const raw = rawItems[i];
-          if (!raw.title || !raw.url) continue;
-          allItems.push({
-            id: `web_${Buffer.from(raw.url).toString('base64url').slice(0, 24)}`,
-            source: ws.source,
-            title: cleanText(raw.title),
-            url: raw.url.startsWith('http') ? raw.url : new URL(raw.url, ws.url).href,
-            score: raw.score ?? 0, // Web 源无真实互动数据，Agent 会根据内容综合打分
-            publishedAt: nowIso(),
-            summary: raw.summary || '',
-          });
-        }
-        console.log(`[sandbox-browser] collected ${allItems.length} items from ${ws.source}`);
-      }
-    } catch (error: any) {
-      console.warn(`[sandbox-web] failed for ${ws.url}:`, {
-        message: error?.message,
-        name: error?.name,
-        status: error?.status || error?.statusCode,
-        code: error?.code,
-        stderr: error?.stderr,
-        stack: error?.stack?.split('\n').slice(0, 3).join('\n'),
-      });
+      const nav = await sbx.browser.goto(source.url, { waitUntil: 'domcontentloaded' });
+      if (nav?.error) throw new Error(nav.error);
+      const result = await sbx.browser.evaluate(buildExtractScript(source.linkPattern, limit * 2));
+      const d = result?.data;
+      const parsed = typeof d === 'string' ? JSON.parse(d) : d;
+      if (Array.isArray(parsed)) anchors = parsed as RawAnchor[];
+    } catch (error) {
+      console.warn(`[html:browser] ${source.id} failed, falling back to fetch:`, error instanceof Error ? error.message : error);
     }
   }
 
-  return allItems.slice(0, limit);
+  if (!anchors.length) {
+    try {
+      const html = await fetchText(source.url);
+      anchors = extractAnchors(html, source.url, source.linkPattern, limit * 2);
+    } catch (error) {
+      console.warn(`[html:fetch] ${source.id} failed:`, error instanceof Error ? error.message : error);
+      return [];
+    }
+  }
+
+  return anchors.slice(0, limit).map(a => ({
+    id: itemId(source.id, a.url),
+    source: source.name,
+    title: cleanText(a.title),
+    url: a.url,
+    score: 0,
+    publishedAt: nowIso(), // list pages rarely expose dates; eventTime is refined by the Summarizer
+    summary: a.summary || '',
+    category: source.topicHint,
+  }));
 }
 
-// ── Unified collection ──
+// ── Unified collection ────────────────────────────────────────────────────────
 
+export interface CollectStats { source: string; fetched: number; kept: number; ok: boolean }
+
+/**
+ * Collect from the requested sources (ids, or 'all'), apply per-source filters,
+ * then allocate `limit` slots by trust (higher trust → more slots), newest first inside a source.
+ */
 export async function collectSources(
-  sources: string[] = ['hackernews', 'devto'],
+  sources: string[] = ['all'],
   limit = 30,
   sandbox?: unknown,
+  list: TrendSource[] = SOURCES,
 ): Promise<TrendSourceItem[]> {
-  const batches = await Promise.all([
-    sources.includes('hackernews') ? collectHackerNews(40) : Promise.resolve([]),
-    sources.includes('devto') ? collectDevto(25) : Promise.resolve([]),
-    sources.includes('web') ? collectFromWeb(sandbox ?? null, DEFAULT_WEB_SOURCES, 25) : Promise.resolve([]),
-  ]);
+  const wanted = sources.includes('all') || !sources.length
+    ? enabledSources(list)
+    : enabledSources(list).filter(s => sources.includes(s.id));
 
-  // Filter all sources through AI keywords uniformly
-  const [hnItems, devtoItems, webItems] = batches;
-  const filteredHn = filterAiItems(hnItems);
-  const filteredDevto = filterAiItems(devtoItems);
-  const filteredWeb = filterAiItems(webItems);
+  const perSourceFetch = Math.max(8, Math.ceil(limit / Math.max(1, wanted.length)) * 3);
+  const stats: CollectStats[] = [];
 
-  console.log(`[sources] after filter — HN: ${filteredHn.length}, DevTo: ${filteredDevto.length}, Web: ${filteredWeb.length}`);
+  const batches = await Promise.all(wanted.map(async source => {
+    const raw = source.type === 'rss'
+      ? await collectRss(source, perSourceFetch)
+      : await collectHtml(source, perSourceFetch, sandbox);
+    const kept = filterIndustryItems(raw, source);
+    stats.push({ source: source.id, fetched: raw.length, kept: kept.length, ok: raw.length > 0 });
+    return { source, items: kept };
+  }));
 
-  // Balanced allocation: HN 40% / DevTo 30% / Web 30%
-  const hnSlots = Math.min(filteredHn.length, Math.ceil(limit * 0.4));
-  const devtoSlots = Math.min(filteredDevto.length, Math.ceil(limit * 0.3));
-  const webSlots = Math.min(filteredWeb.length, Math.ceil(limit * 0.3));
+  console.log('[sources] per-source stats:', JSON.stringify(stats));
 
-  // If any source has fewer items than its allocation, redistribute
-  const selected = [
-    ...filteredHn.slice(0, hnSlots),
-    ...filteredDevto.slice(0, devtoSlots),
-    ...filteredWeb.slice(0, webSlots),
-  ];
+  // Trust-weighted allocation with a floor of 1 slot per productive source.
+  const productive = batches.filter(b => b.items.length);
+  const totalTrust = productive.reduce((acc, b) => acc + b.source.trust, 0) || 1;
+  const selected: TrendSourceItem[] = [];
+  for (const b of productive) {
+    const slots = Math.max(1, Math.round((b.source.trust / totalTrust) * limit));
+    const sorted = [...b.items].sort((a, c) => String(c.publishedAt || '').localeCompare(String(a.publishedAt || '')));
+    selected.push(...sorted.slice(0, slots).map(i => ({ ...i, score: Math.round(b.source.trust * 50) })));
+  }
+
+  // Fill remaining slots round-robin from leftovers (still trust-ordered).
+  if (selected.length < limit) {
+    const chosen = new Set(selected.map(i => i.id));
+    const leftovers = productive
+      .sort((a, b) => b.source.trust - a.source.trust)
+      .flatMap(b => b.items.filter(i => !chosen.has(i.id)).map(i => ({ ...i, score: Math.round(b.source.trust * 50) })));
+    selected.push(...leftovers.slice(0, limit - selected.length));
+  }
 
   return selected.slice(0, limit);
 }

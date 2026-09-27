@@ -1,6 +1,15 @@
 import type { TrendSourceItem } from './_types.js';
 
-const TRACKING_PARAMS = new Set(['ref', 'source']);
+/**
+ * Query keys removed before fingerprinting. Anything starting with `utm_` is removed too,
+ * and the URL fragment (#…) is always dropped — so the same article shared via a newsletter,
+ * WeChat or a tracking link collapses to one canonical URL.
+ */
+const TRACKING_PARAMS = new Set([
+  'ref', 'source', 'from', 'spm', 'share_token', 'shareid', 'share_id',
+  'fbclid', 'gclid', 'dclid', 'msclkid', 'yclid', 'igshid', 'mc_cid', 'mc_eid',
+  '_hsenc', '_hsmi', 'hsctatracking', 'srsltid', 'ncid', 'cmpid', 'campaign',
+]);
 
 export interface TrendLibraryItem extends TrendSourceItem {
   fingerprint?: string;
