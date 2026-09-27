@@ -1,7 +1,8 @@
 import type { AgentContext } from '@edgeone/types';
 import { randomUUID } from 'node:crypto';
 
-import { getBody, getEnv, jsonResponse } from './_http.js';
+import { buildBrief, validateBrief } from './_contract.js';
+import { getBody, getEnv } from './_http.js';
 import { mergeItemLibrary, type TrendLibraryItem } from './_items.js';
 import { loadItemsFromMemory, saveItemsToMemory, saveReportToMemory } from './_memory.js';
 import { runAgentPipeline } from './_model.js';
@@ -61,7 +62,7 @@ export async function onRequest(context: AgentContext): Promise<Response> {
         emit({ type: 'items', phase: 'fetched', items: mergeResult.reportItems });
 
         // ── 4-Agent Pipeline (with SSE progress) ──
-        const { report } = await runAgentPipeline({
+        const { report, stages } = await runAgentPipeline({
           items: mergeResult.reportItems,
           historyItems: existingItems,
           runId,
@@ -80,7 +81,26 @@ export async function onRequest(context: AgentContext): Promise<Response> {
         report.newItemCount = mergeResult.newItemCount;
         report.reusedItemCount = mergeResult.reusedItemCount;
         report.noNewItems = noNewItems;
+        report.kind = 'daily';
         if (!report.items?.length) report.items = mergeResult.reportItems;
+
+        // ── Plan §4 structured contract (validated; policy enforced in code) ──
+        const brief = buildBrief({
+          runId,
+          items: report.items,
+          markdown: report.reportMarkdown,
+          tail: stages.writerTail ?? null,
+          status: report.items.length ? 'completed' : 'empty',
+          generatedAt: report.generatedAt,
+          windowHours: Number(body.windowHours || 24),
+        });
+        const validation = validateBrief(brief);
+        if (!validation.ok) {
+          console.warn('[run] brief failed schema validation:', JSON.stringify(validation.errors.slice(0, 10)));
+          report.agentWarning = [report.agentWarning, `brief schema errors: ${validation.errors.length}`].filter(Boolean).join('; ');
+        }
+        report.brief = brief;
+        emit({ type: 'brief', valid: validation.ok, itemCount: brief.items.length, highlightCount: brief.report.highlights.length, hasNeotelNote: Boolean(brief.report.neotelNote) });
 
         // ── Persist ──
         const savedToMemory = await saveReportToMemory(context, report).catch(() => false);
@@ -108,8 +128,10 @@ export async function onRequest(context: AgentContext): Promise<Response> {
         failed.generatedAt = utcNow();
         failed.durationMs = Date.now() - started;
         failed.summary = '生成失败';
-        failed.reportMarkdown = `# AI 趋势日报\n\n生成失败：${message}`;
+        failed.kind = 'daily';
+        failed.reportMarkdown = `# PCB/SMT 行业趋势日报\n\n生成失败：${message}`;
         failed.error = message;
+        failed.brief = buildBrief({ runId, items: [], markdown: failed.reportMarkdown, status: 'failed', generatedAt: failed.generatedAt });
         const savedToMemory = await saveReportToMemory(context, failed).catch(() => false);
         if (!savedToMemory) await saveReport(failed);
 

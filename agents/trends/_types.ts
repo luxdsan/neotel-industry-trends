@@ -27,6 +27,10 @@ export interface TrendGroup {
 export interface TrendReport {
   runId: string;
   status: 'success' | 'failed' | 'empty' | string;
+  /** 'daily' (default, /trends/run) or 'weekly' (/trends/weekly roll-up). */
+  kind?: 'daily' | 'weekly';
+  /** Plan §4 structured contract — see _contract.ts / schema.json. */
+  brief?: unknown;
   trigger?: string;
   generatedAt: string;
   durationMs?: number;
@@ -49,6 +53,7 @@ export interface TrendReport {
 export interface HistoryEntry {
   runId?: string;
   status?: string;
+  kind?: 'daily' | 'weekly';
   trigger?: string;
   generatedAt?: string;
   itemCount?: number;
@@ -67,7 +72,7 @@ export const CuratedItemSchema = z.object({
   title: z.string(),
   url: z.string(),
   source: z.string().optional(),
-  category: z.string().describe('AI Agent / LLM / Multimodal / Open Source Model / AI Infra / AI Industry'),
+  category: z.string().describe('设备 / 材料 / 供应链 / 政策标准 / 展会 / 厂商动态'),
   reason: z.string().describe('Brief reason for keep/drop decision (Chinese)'),
   keep: z.boolean().describe('true to include, false to drop'),
 });
@@ -83,7 +88,8 @@ export type CuratorOutput = z.infer<typeof CuratorOutputSchema>;
 // Agent 2: Summarizer output
 export const SummarizedItemSchema = z.object({
   id: z.string(),
-  aiSummary: z.string().describe('1-2 sentence Chinese summary'),
+  aiSummary: z.string().describe('≤80 字中文事实摘要'),
+  eventTime: z.string().optional().describe('YYYY-MM-DD when explicitly stated in the text, else ""'),
 });
 export type SummarizedItem = z.infer<typeof SummarizedItemSchema>;
 

@@ -17,30 +17,30 @@ function formatReportTime(value: string): string {
 
 function summarizeCategory(category: string, items: TrendSourceItem[]): string {
   const titles = items.slice(0, 3).map(item => item.title).filter(Boolean);
-  if (!titles.length) return `${category} 方向有少量动态，建议继续观察。`;
-  return `${category} 方向出现 ${items.length} 条相关动态，代表内容包括：${titles.join('；')}。`;
+  if (!titles.length) return `${category}：本期有少量动态。`;
+  return `${category}：${items.length} 条，包括 ${titles.join('；')}。`;
 }
 
 export function generateMarkdown(items: TrendSourceItem[], generatedAt: string): { markdown: string; trends: TrendGroup[] } {
   const grouped = new Map<string, TrendSourceItem[]>();
   for (const item of items) {
-    const category = item.category || 'AI Industry';
+    const category = item.category || '厂商动态';
     grouped.set(category, [...(grouped.get(category) || []), item]);
   }
 
   const trends: TrendGroup[] = [];
   const lines = [
-    '# AI 趋势日报',
+    `# ${generatedAt.slice(0, 10)} PCB/SMT 行业趋势日报`,
     '',
     `生成时间：${formatReportTime(generatedAt)}`,
-    `分析内容：${items.length} 条候选动态`,
+    `分析内容：${items.length} 条候选资讯`,
     '',
-    '## 今日趋势概览',
+    '## 今日要点',
     '',
   ];
 
   if (!items.length) {
-    lines.push('暂无满足条件的 AI 趋势内容。建议稍后重试或扩展数据源。', '');
+    lines.push('今日无新增，以下为近期仍值得关注的资讯。', '');
     return { markdown: lines.join('\n'), trends };
   }
 
@@ -50,25 +50,23 @@ export function generateMarkdown(items: TrendSourceItem[], generatedAt: string):
     lines.push(`${index + 1}. **${category}**：${summary}`);
   });
 
-  lines.push('', '## 重点趋势', '');
+  lines.push('', '## 分主题动态', '');
   for (const trend of trends) {
-    lines.push(`### ${trend.category}`, '', trend.summary, '', '代表来源：');
+    lines.push(`### ${trend.category}`, '');
     for (const item of trend.items) {
-      lines.push(`- [${item.title}](${item.url}) — ${item.source || 'Unknown'} · score ${item.score || 0}`);
+      lines.push(`- [${item.title}](${item.url}) — ${item.aiSummary || item.summary || ''}（${item.source || 'Unknown'}）`);
     }
     lines.push('');
   }
 
   lines.push(
-    '## 后续关注问题',
+    '## 挚锦解读',
     '',
-    '- 哪些 Agent 工具链开始获得真实生产用户？',
-    '- 多模态能力是否从演示进入稳定业务流程？',
-    '- 开源模型与闭源模型在成本、性能和可控性上的差距是否缩小？',
+    '本期无',
     '',
     '## 说明',
     '',
-    '本报告由模板从公开技术信息源自动生成，建议对关键事实继续核验原文链接。',
+    '本期为代码兜底版本（模型阶段未成功），条目为原始采集结果的 AI 摘要，以原文为准。',
   );
 
   return { markdown: lines.join('\n'), trends };
@@ -83,7 +81,7 @@ export function generateFallbackReport(items: TrendSourceItem[], runId: string, 
     trigger,
     generatedAt,
     itemCount: items.length,
-    summary: trends[0]?.summary || '暂无满足条件的 AI 趋势内容。',
+    summary: trends[0]?.summary || '今日无新增资讯。',
     reportMarkdown: markdown,
     trends,
     items,
