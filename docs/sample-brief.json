@@ -1,0 +1,96 @@
+{
+  "runId": "run_test_ab12",
+  "generatedAt": "2026-09-28T09:14:32+08:00",
+  "status": "completed",
+  "window": {
+    "from": "2026-09-27T09:14:32+08:00",
+    "to": "2026-09-28T09:14:32+08:00"
+  },
+  "items": [
+    {
+      "id": "9177d603dd979b6857ef118a310145b04d62c008",
+      "title": "IPC-A-610J released",
+      "url": "https://www.electronics.org/news/ipc-a-610j",
+      "source": "Global Electronics Association (formerly IPC)",
+      "eventTime": "2026-09-25",
+      "fetchedAt": "2026-09-28T09:14:32+08:00",
+      "summaryZh": "IPC-A-610J 电子组件可接受性标准发布，替代 2020 年的 H 版。",
+      "topic": "政策标准",
+      "score": 90,
+      "seenCount": 1
+    },
+    {
+      "id": "0c298c1df31f5f88d107e888af6bd640588a1ec5",
+      "title": "MLCC 交期延长至 20 周",
+      "url": "https://www.esmchina.com/news/12345",
+      "source": "国际电子商情",
+      "eventTime": "2026-09-27",
+      "fetchedAt": "2026-09-28T09:02:00+08:00",
+      "summaryZh": "多家分销商反馈车规 MLCC 交期从 12 周延长至 20 周，库存周转承压。",
+      "topic": "供应链",
+      "score": 85,
+      "seenCount": 2
+    },
+    {
+      "id": "1ca206e64f75a7a665d97ea4d11034cfade438f8",
+      "title": "EMS provider opens second SMT line in Monterrey",
+      "url": "https://www.emsnow.com/ems-monterrey-line",
+      "source": "EMSNOW",
+      "eventTime": "2026-09-26",
+      "fetchedAt": "2026-09-28T09:02:00+08:00",
+      "summaryZh": "一家 EMS 厂商在墨西哥蒙特雷启用第二条 SMT 产线，面向汽车电子客户。",
+      "topic": "厂商动态",
+      "score": 78,
+      "seenCount": 1
+    },
+    {
+      "id": "3a441020e1e590380631e07344c2c86dd2279780",
+      "title": "全球最强贴片机发布",
+      "url": "https://www.elecfans.com/news/999.html",
+      "source": "电子发烧友",
+      "eventTime": "2026-09-27",
+      "fetchedAt": "2026-09-28T09:14:32+08:00",
+      "summaryZh": "全球最强贴片机发布",
+      "topic": "设备",
+      "score": 55,
+      "seenCount": 1
+    }
+  ],
+  "report": {
+    "titleZh": "2026-09-28 PCB/SMT 行业趋势日报",
+    "highlights": [
+      {
+        "text": "IPC-A-610J 发布，替代 2020 年的 H 版。",
+        "itemIds": [
+          "9177d603dd979b6857ef118a310145b04d62c008"
+        ]
+      },
+      {
+        "text": "车规 MLCC 交期延长至 20 周，库存周转承压。",
+        "itemIds": [
+          "0c298c1df31f5f88d107e888af6bd640588a1ec5"
+        ]
+      }
+    ],
+    "topics": [
+      {
+        "name": "设备",
+        "count": 1
+      },
+      {
+        "name": "供应链",
+        "count": 1
+      },
+      {
+        "name": "政策标准",
+        "count": 1
+      },
+      {
+        "name": "厂商动态",
+        "count": 1
+      }
+    ],
+    "neotelNote": "交期拉长时，料盘注册与点料数据的准确性直接影响补料计划。",
+    "markdown": "# 2026-09-28 PCB/SMT 行业趋势日报\n\n## 今日要点\n- IPC-A-610J 发布（GEA）\n- 车规 MLCC 交期延长至 20 周（国际电子商情）\n\n## 挚锦解读\n本期无"
+  }
+}

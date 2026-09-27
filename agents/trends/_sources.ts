@@ -120,6 +120,16 @@ function pick(block: string, tag: string): string {
   return m ? m[1].trim() : '';
 }
 
+/** Decode CDATA/entities without stripping URLs (for <link>/<guid> values). */
+function rawValue(value: string): string {
+  return String(value || '')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&amp;/g, '&')
+    .replace(/&#x2F;/g, '/')
+    .replace(/<[^>]+>/g, '')
+    .trim();
+}
+
 function toIso(value: string): string | undefined {
   if (!value) return undefined;
   const d = new Date(cleanText(value));
@@ -132,13 +142,13 @@ export function parseFeed(xml: string, baseUrl?: string): FeedEntry[] {
   const entries: FeedEntry[] = [];
   for (const block of blocks) {
     const title = cleanText(pick(block, 'title'));
-    let url = cleanText(pick(block, 'link'));
+    let url = rawValue(pick(block, 'link'));
     if (!url) {
       const alt = block.match(/<link[^>]*rel=["']alternate["'][^>]*href=["']([^"']+)["']/i) || block.match(/<link[^>]*href=["']([^"']+)["']/i);
-      url = alt ? alt[1] : '';
+      url = alt ? rawValue(alt[1]) : '';
     }
     if (!url) {
-      const guid = cleanText(pick(block, 'guid'));
+      const guid = rawValue(pick(block, 'guid'));
       if (/^https?:\/\//.test(guid)) url = guid;
     }
     if (!title || !url) continue;
