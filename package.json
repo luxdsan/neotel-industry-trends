@@ -8,7 +8,8 @@
     "test": "tsc -p tsconfig.test.json && node .test-build/trends/tests/report-pipeline.test.js",
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.agent.json && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.agent.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.agent.json --noEmit",
+    "schema": "tsc -p tsconfig.test.json && node .test-build/trends/tests/export-schema.js"
   },
   "dependencies": {
     "@openai/agents": "^0.10.1",
