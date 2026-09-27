@@ -1,165 +1,101 @@
-# AI Trends Scheduled Summary
+# Neotel Industry Trends — PCB/SMT 行业趋势 Agent
 
-> A scheduled AI news aggregation agent built with the OpenAI Agents SDK on EdgeOne Makers — automatically collects, curates, scores, and generates daily trend reports from multiple sources.
+> Fork of [`TencentEdgeOne/ai-trends-agent`](https://github.com/TencentEdgeOne/ai-trends-agent) adapted
+> for the electronics-manufacturing (PCB / SMT / EMS) domain. Runs on **EdgeOne Makers** (OpenAI Agents
+> SDK, TypeScript), collects public industry news every morning, and emits both a Chinese Markdown
+> report and a strict JSON brief (`schema.json`) that a separate CN-server tool syncs into WordPress.
 
-**Framework:** OpenAI Agents SDK · **Category:** Scheduled · **Language:** TypeScript
+**Framework:** OpenAI Agents SDK · **Category:** Scheduled · **Language:** TypeScript · **Branch:** `neotel`
 
-[![Deploy to EdgeOne Makers](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://edgeone.ai/makers/new?template=ai-trends-scheduled-summary&from=within&fromAgent=1&agentLang=typescript)
+- **Runbook (deploy / env / endpoints / open questions):** [`docs/RUNBOOK.md`](docs/RUNBOOK.md)
+- **Architecture notes (what each file does):** [`docs/ARCHITECTURE-NOTES.md`](docs/ARCHITECTURE-NOTES.md)
+- **Data contract:** [`schema.json`](schema.json) · sample output [`docs/sample-brief.json`](docs/sample-brief.json)
+- **Source list (edit here to add/disable sources):** [`agents/trends/_source_list.ts`](agents/trends/_source_list.ts)
 
-## Overview
+## What it does
 
-AI Trends Scheduled Summary runs a 4-agent pipeline on a daily cron schedule (or manual trigger) to collect AI industry news from Hacker News, Dev.to, and web sources, then produces a curated Markdown trend report. The entire pipeline streams progress via SSE so users can watch items being fetched, filtered, scored, and written in real time.
+1. **Fetch & Merge** — 21 sources (`_source_list.ts`: CPCA, 中国电子报, 电子发烧友, 集微网, 半导体行业观察,
+   国际电子商情, SMT007/PCB007, EMSNOW, Evertiq, Global Electronics Association, SEMI, Fuji, Yamaha, JUKI,
+   ASMPT, Mycronic, Koh Young, NEPCON, productronica, IPC APEX). RSS via `fetch()`, list pages via the
+   sandbox browser (plain `fetch()` fallback). Canonical-URL fingerprints (utm/tracker/fragment stripped)
+   dedupe across runs and track `seenCount`.
+2. **Curator ‖ Summarizer** — keep only PCB/SMT/EMS/供应链/设备厂商/政策标准/展会; ≤80 字 factual Chinese
+   summaries with `eventTime` when stated.
+3. **Analyst** — 0–100 score (决策价值 / 来源可信度 / 相关度), topic clustering
+   (`设备|材料|供应链|政策标准|展会|厂商动态`), optional `fetch_url` deep-read of 2–3 items.
+4. **Writer** — fixed Markdown skeleton (今日要点 / 分主题动态 / 持续发酵 / 原文细读 / 挚锦解读) plus a
+   `<!--BRIEF-JSON-->` tail. `挚锦解读` is written only when an item has a real link to SMT material
+   management; the code (`_policy.ts`) blanks it on any competitor name, comparison, superlative or sales word.
+5. **Contract** — `_contract.ts` builds `report.brief` (plan §4) and validates it against `schema.json`.
+6. **Weekly** — `POST /trends/weekly` rolls the last 7 daily reports into one weekly draft (no LLM call).
 
-- **Multi-source collection** — pulls from Hacker News, Dev.to, and configurable web sources (via sandbox browser scraping)
-- **4-agent pipeline** — Curator (filter) + Summarizer (summarize) run in parallel, followed by Analyst (score + classify) and Writer (Markdown report)
-- **Real-time SSE streaming** — progressive content disclosure from fetch through final report, with token-level Writer streaming
-- **Cross-run deduplication** — fingerprint-based item library tracks `seenCount`, `firstSeenAt`, `lastSeenAt` across scheduled runs
-- **Comprehensive scoring** — Analyst assigns 0–100 scores based on source engagement, content quality, and AI-relevance
-
-## Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `AI_GATEWAY_API_KEY` | Yes | Model gateway API key. Use your **Makers Models API Key**, or any OpenAI-compatible provider key. |
-| `AI_GATEWAY_BASE_URL` | Yes | Gateway base URL. For Makers Models, use `https://ai-gateway.edgeone.link/v1`. |
-| `AI_GATEWAY_MODEL` | No | Model ID. Defaults to `@makers/minimax-m2.7`. |
-
-> This template follows the **OpenAI-compatible** standard — you can point these variables at Makers Models or any other compatible gateway / provider.
-
-### How to get `AI_GATEWAY_API_KEY`
-
-1. Open the [Makers Console](https://edgeone.ai/makers/new?s_url=https://console.tencentcloud.com/edgeone/makers).
-2. Sign in and enable Makers.
-3. Go to **Makers → Models → API Key** and create a key.
-4. Copy it into `AI_GATEWAY_API_KEY` (set `AI_GATEWAY_BASE_URL` to `https://ai-gateway.edgeone.link/v1`).
-
-Built-in models (`@makers/deepseek-v4-flash`, `@makers/hy3-preview`, `@makers/minimax-m2.7`) are free and rate-limited — great for prototyping. For production, bind your own provider key (BYOK) in the console.
-
-### Provider fallbacks
-
-The code reads environment variables with the following priority chain:
-
-```
-LLM_API_KEY → AI_GATEWAY_API_KEY → OPENAI_API_KEY
-LLM_BASE_URL → AI_GATEWAY_BASE_URL → OPENAI_BASE_URL
-LLM_MODEL → AI_GATEWAY_MODEL → @makers/minimax-m2.7
-```
-
-You can set any of these depending on your provider preference.
-
-## Local Development
-
-**Prerequisites:** Node.js ≥ 18, npm
-
-```bash
-npm install
-cp .env.example .env
-edgeone makers dev
-```
-
-Open `http://localhost:8080/agent-metrics` for the local observability panel.
-
-## Project Structure
-
-```text
-ai-trends-scheduled-summary/
-├── agents/
-│   └── ai-trends/
-│       ├── run.ts              # /ai-trends/run — main pipeline entry (SSE stream)
-│       ├── stop.ts             # /ai-trends/stop — abort a running pipeline
-│       ├── _model.ts           # 4-agent definitions, prompts, streaming logic
-│       ├── _sources.ts         # Data collection (HN, Dev.to, sandbox browser)
-│       ├── _items.ts           # Item library: fingerprinting, merge, dedup
-│       ├── _memory.ts          # Platform store persistence (reports + items)
-│       ├── _storage.ts         # File-system fallback persistence
-│       ├── _report.ts          # Report assembly helpers
-│       ├── _http.ts            # Request/response utilities
-│       └── _types.ts           # Shared Zod schemas & TypeScript types
-├── cloud-functions/
-│   └── ai-trends/
-│       ├── latest/index.ts     # GET /ai-trends/latest
-│       ├── history/index.ts    # GET /ai-trends/history
-│       ├── detail/index.ts     # POST /ai-trends/detail
-│       ├── delete/index.ts     # POST /ai-trends/delete
-│       └── health/index.ts     # GET /ai-trends/health
-├── src/                        # Frontend (React + Vite)
-│   ├── App.tsx                 # Main UI: LiveFeed, PipelineBar, ReportDrawer
-│   ├── api.ts                  # SSE client & REST helpers
-│   ├── i18n.tsx                # Chinese/English i18n
-│   ├── MarkdownReport.tsx      # Markdown renderer
-│   ├── reportModel.ts          # Frontend report normalization
-│   └── types.ts                # Frontend type definitions
-├── edgeone.json                # Agent runtime & schedule configuration
-└── package.json
-```
-
-> Files prefixed with `_` are private modules — not exposed as public routes by EdgeOne.
-
-## How It Works
-
-The agent runs as a **session-mode** runtime under `agents/`. Requests sharing the same `conversation_id` are routed to the same instance (and sandbox, when available).
-
-### Pipeline Flow
-
-1. **Trigger** — either via cron schedule (`0 9 * * *` daily) or manual POST to `/ai-trends/run`. The request includes `sources` (default: `hackernews`, `devto`, `web`) and `limit`.
-
-2. **Fetch & Merge** — collects candidates from configured sources. Hacker News and Dev.to use public APIs; web sources use the sandbox browser (`context.sandbox.browser.goto` + `evaluate`) for JS-rendered pages. Candidates are deduplicated against the item library using URL/title fingerprints.
-
-3. **Curator + Summarizer (parallel)** — two agents run concurrently via `Promise.allSettled`:
-   - **Curator** filters irrelevant items, assigns categories (`AI Agent`, `LLM`, `Multimodal`, etc.), and decides keep/drop.
-   - **Summarizer** generates 1–2 sentence Chinese summaries for each item.
-
-4. **Analyst** — scores each item 0–100 (weighted: 40% quality, 30% heat, 30% relevance), groups by category, identifies new/active/single status, and optionally deep-dives into 2–3 top articles via `fetch_url` sandbox tool.
-
-5. **Writer (token-streaming)** — generates a structured Markdown report streamed token-by-token to the client. Filters `<think>` tags in real time. Falls back to non-streaming retry on connection failure.
-
-6. **Persist** — the final report is saved to `context.store` (platform memory). If unavailable, falls back to file-system storage.
-
-### SSE Streaming Protocol
-
-The `/ai-trends/run` endpoint returns an SSE stream with typed events:
-
-| Event type | Purpose |
-|-----------|---------|
-| `stage` | Pipeline stage status transitions (`running` / `done` / `failed`) |
-| `items` | Progressive content snapshots (`fetched` → `curated` → `summarized`) |
-| `analysis` | Analyst output (categories, scores, keyInsight) |
-| `progress` | Keepalive during long LLM calls (emitted every 8s) |
-| `token` | Writer Markdown tokens for live-typing UX |
-| `complete` | Terminal event with the full `TrendReport` payload |
-
-### Key Design Decisions
-
-- **Graceful degradation** — if Writer fails, report is assembled from Analyst output; if Analyst fails, a code-generated fallback is used.
-- **AbortSignal** — threaded through all stages; users can stop generation mid-pipeline.
-- **Conversation-scoped storage** — reports and item library are stored per conversation via `context.store.appendMessage` / `getMessages`.
-
-### Runtime Configuration
-
-From `edgeone.json`:
-- `agents.timeout`: 1200s (20 min max pipeline duration)
-- `agent.sandbox.timeout`: 300s (sandbox lifetime for browser scraping)
-- `schedules[0].cron`: `0 9 * * *` (daily at 01:00 UTC)
-
-### Route Summary
+## Routes
 
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/ai-trends/run` | POST | Start pipeline (SSE stream) |
-| `/ai-trends/stop` | POST | Abort running pipeline |
-| `/ai-trends/latest` | GET | Latest report |
-| `/ai-trends/history` | GET | Report history list |
-| `/ai-trends/detail` | POST | Specific report by runId |
-| `/ai-trends/delete` | POST | Delete report by runId |
+| `/trends/run` | POST | Start the daily pipeline (SSE stream; final `complete` event carries the report incl. `brief`) |
+| `/trends/weekly` | POST | Build the weekly roll-up from the last 7 daily reports (JSON) |
+| `/trends/stop` | POST | Abort a running pipeline (`{conversationId}`) |
+| `/trends/latest` | GET | Latest report. `?kind=daily` (default) / `weekly` / `any`; `?brief=1` returns only the §4 JSON |
+| `/trends/history` | GET | `{history: [...]}` (30 max, with `kind`) |
+| `/trends/detail` | POST | `{runId}` → full report incl. `brief` |
+| `/trends/delete` | POST | `{runId}`; requires header `x-admin-token` = env `ADMIN_TOKEN` |
+| `/trends/health` | GET | `{status:'ok'}` |
+| `/ai-trends/*` | * | Legacy aliases re-exporting the routes above |
 
-The `conversation_id` is passed via the `makers-conversation-id` request header.
+The dashboard passes `makers-conversation-id: trends-dashboard`; `/trends/stop` must **not** carry that header.
 
-## Resources
+## Environment variables
 
-- [Makers Agents Documentation](https://pages.edgeone.ai/document/agents)
-- [Quick Start: Agent Development](https://pages.edgeone.ai/document/agents-quick-start)
-- [Makers Models](https://pages.edgeone.ai/document/models)
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `AI_GATEWAY_API_KEY` | Yes | Makers Models API key (or any OpenAI-compatible key) |
+| `AI_GATEWAY_BASE_URL` | Yes | e.g. `https://ai-gateway.edgeone.link/v1` |
+| `AI_GATEWAY_MODEL` | No | Default `@makers/deepseek-v4.1-flash` |
+| `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | No | Override chain: `LLM_* → AI_GATEWAY_* → OPENAI_*` |
+| `ADMIN_TOKEN` | No | Enables `POST /trends/delete`; unset = delete disabled |
+| `TRENDS_DATA_DIR` | No | Local-dev file fallback dir (default `data/trends`) |
+
+See `.env.example`. Never commit real values.
+
+## Local development
+
+```bash
+npm install
+npm run build        # tsc (frontend + agents) + vite build
+npm test             # unit tests → also writes docs/sample-brief.json
+npm run schema       # regenerate schema.json from agents/trends/_schema.ts
+edgeone makers dev   # needs `edgeone login`; do NOT pass -n (it creates a Makers project)
+```
+
+## Project structure
+
+```text
+agents/trends/
+  run.ts              POST /trends/run — SSE pipeline entry (+ brief assembly)
+  weekly.ts           POST /trends/weekly — 7-day roll-up
+  stop.ts             POST /trends/stop
+  _source_list.ts     ← the source data file (type/lang/region/trust/patterns)
+  _sources.ts         RSS/Atom parser, HTML anchor extractor, keyword gate, allocation
+  _items.ts           canonical URL + fingerprint dedupe library
+  _model.ts           4 agents + prompts (zh, PCB/SMT), streaming, fallbacks
+  _contract.ts        plan §4 TrendBrief builder + validation
+  _schema.ts          BRIEF_SCHEMA + minimal JSON-schema validator (mirrored in /schema.json)
+  _policy.ts          absolute/comparative/competitor/sales word rules, clampSummary
+  _weekly.ts          pure weekly aggregation
+  _memory.ts          platform store (context.store) persistence, kind filter
+  _storage.ts         file-system fallback
+  _report.ts          code-only fallback report
+  tests/              node:assert unit tests + schema exporter
+agents/ai-trends/     legacy route aliases
+cloud-functions/trends/{latest,history,detail,delete,health}
+cloud-functions/ai-trends/   legacy route aliases
+src/                  React dashboard (strings renamed, delete gated)
+edgeone.json          agents runtime + schedules (daily 09:00, weekly Fri 10:00, Asia/Shanghai)
+schema.json           data contract for the WordPress sync tool
+docs/                 RUNBOOK.md, ARCHITECTURE-NOTES.md, sample-brief.json
+```
 
 ## License
 
-MIT
+MIT (upstream template) — see the original repository.
