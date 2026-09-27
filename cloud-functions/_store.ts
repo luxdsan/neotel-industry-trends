@@ -11,6 +11,8 @@ import type { CloudFunctionContext } from '@edgeone/types';
 interface TrendReport {
   runId: string;
   status: string;
+  kind?: 'daily' | 'weekly';
+  brief?: unknown;
   trigger?: string;
   generatedAt: string;
   durationMs?: number;
@@ -29,6 +31,7 @@ interface TrendReport {
 interface HistoryEntry {
   runId?: string;
   status?: string;
+  kind?: 'daily' | 'weekly';
   trigger?: string;
   generatedAt?: string;
   itemCount?: number;
@@ -90,6 +93,7 @@ function toHistoryEntry(report: TrendReport): HistoryEntry {
   return {
     runId: report.runId,
     status: report.status,
+    kind: report.kind ?? 'daily',
     trigger: report.trigger,
     generatedAt: report.generatedAt,
     itemCount: report.itemCount,
@@ -119,9 +123,28 @@ async function loadReports(store: AgentMemoryLike, limit = 30): Promise<TrendRep
   return reports;
 }
 
-export async function loadLatestReport(store: AgentMemoryLike): Promise<TrendReport | null> {
-  const reports = await loadReports(store, 1);
-  return reports[0] ?? null;
+export type ReportKind = 'daily' | 'weekly' | 'any';
+
+/**
+ * Latest report. `kind` defaults to 'daily' so the WordPress sync tool never mistakes a
+ * Friday weekly roll-up for today's daily brief; pass 'any' for the dashboard behaviour.
+ */
+export async function loadLatestReport(store: AgentMemoryLike, kind: ReportKind = 'daily'): Promise<TrendReport | null> {
+  if (kind === 'any') {
+    const reports = await loadReports(store, 1);
+    return reports[0] ?? null;
+  }
+  const reports = await loadReports(store, 30);
+  return reports.find(r => (r.kind ?? 'daily') === kind) ?? null;
+}
+
+/** Constant-time-ish comparison for the admin token (avoid trivially short-circuiting). */
+export function tokenMatches(provided: string | null | undefined, expected: string | undefined): boolean {
+  if (!expected || !provided) return false;
+  if (provided.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= provided.charCodeAt(i) ^ expected.charCodeAt(i);
+  return diff === 0;
 }
 
 export async function loadHistory(store: AgentMemoryLike): Promise<HistoryEntry[]> {

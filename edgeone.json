@@ -15,16 +15,29 @@
   },
   "schedules": [
     {
-      "name": "ai-trends-periodic",
+      "name": "daily-trends",
       "cron": "0 9 * * *",
       "path": "/trends/run",
+      "method": "POST",
+      "timezone": "Asia/Shanghai",
       "payload": {
         "_schedule": true,
         "trigger": "schedule",
-        "sources": ["hackernews", "devto", "web"],
+        "sources": ["all"],
         "limit": 30
-      },
-      "timeout": 1200
+      }
+    },
+    {
+      "name": "weekly-trends",
+      "cron": "0 10 * * 5",
+      "path": "/trends/weekly",
+      "method": "POST",
+      "timezone": "Asia/Shanghai",
+      "payload": {
+        "_schedule": true,
+        "trigger": "schedule",
+        "days": 7
+      }
     }
   ]
 }

@@ -53,6 +53,7 @@ function toHistoryEntry(report: TrendReport): HistoryEntry {
   return {
     runId: report.runId,
     status: report.status,
+    kind: report.kind ?? 'daily',
     trigger: report.trigger,
     generatedAt: report.generatedAt,
     itemCount: report.itemCount,
@@ -75,6 +76,7 @@ export async function saveReportToMemory(context: unknown, report: TrendReport):
     content: JSON.stringify(report),
     metadata: {
       kind: REPORT_KIND,
+      reportKind: report.kind ?? 'daily',
       runId: report.runId,
       status: report.status,
       summary: report.summary,
@@ -106,9 +108,19 @@ async function loadReports(context: unknown, limit = 30): Promise<TrendReport[]>
   }
 }
 
-export async function loadLatestReportFromMemory(context: unknown): Promise<TrendReport | null> {
-  const reports = await loadReports(context, 1);
-  return reports[0] ?? null;
+export async function loadLatestReportFromMemory(context: unknown, kind?: 'daily' | 'weekly'): Promise<TrendReport | null> {
+  if (!kind) {
+    const reports = await loadReports(context, 1);
+    return reports[0] ?? null;
+  }
+  const reports = await loadReports(context, 30);
+  return reports.find(r => (r.kind ?? 'daily') === kind) ?? null;
+}
+
+/** All reports of a kind generated on/after `sinceIso` (newest first). Used by /trends/weekly. */
+export async function loadReportsSince(context: unknown, sinceIso: string, kind: 'daily' | 'weekly' = 'daily', limit = 60): Promise<TrendReport[]> {
+  const reports = await loadReports(context, limit);
+  return reports.filter(r => (r.kind ?? 'daily') === kind && String(r.generatedAt || '') >= sinceIso);
 }
 
 export async function loadHistoryFromMemory(context: unknown): Promise<HistoryEntry[]> {
