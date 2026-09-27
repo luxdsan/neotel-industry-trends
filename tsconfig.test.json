@@ -6,8 +6,13 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["node"],
-    "outDir": ".test-build"
+    "types": [
+      "node"
+    ],
+    "outDir": ".test-build",
+    "rootDir": "agents"
   },
-  "include": ["agents/**/*.ts"]
+  "include": [
+    "agents/**/*.ts"
+  ]
 }

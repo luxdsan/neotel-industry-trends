@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { HistoryEntry, TrendReport } from './_types.js';
 
 export function defaultBaseDir(): string {
-  return process.env.AI_TRENDS_DATA_DIR || 'data/ai-trends';
+  return process.env.TRENDS_DATA_DIR || process.env.AI_TRENDS_DATA_DIR || 'data/trends';
 }
 
 function withStorageMarker(report: TrendReport, storage: 'memory' | 'file-fallback'): TrendReport {

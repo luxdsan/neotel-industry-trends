@@ -1,14 +1,14 @@
 import type { HistoryEntry, PipelineEvent, StreamEvent, TrendReport } from './types';
 
-const CONVERSATION_ID = 'ai-trends-dashboard';
+const CONVERSATION_ID = 'trends-dashboard';
 
 export const API = {
-  run: '/ai-trends/run',
-  latest: '/ai-trends/latest',
-  history: '/ai-trends/history',
-  detail: '/ai-trends/detail',
-  delete: '/ai-trends/delete',
-  stop: '/ai-trends/stop',
+  run: '/trends/run',
+  latest: '/trends/latest',
+  history: '/trends/history',
+  detail: '/trends/detail',
+  delete: '/trends/delete',
+  stop: '/trends/stop',
 } as const;
 
 async function parseJson<T>(res: Response): Promise<T> {

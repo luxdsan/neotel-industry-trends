@@ -1,13 +1,14 @@
 {
-  "name": "ai-trends-scheduled-summary-node",
+  "name": "neotel-industry-trends",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "tsc -p tsconfig.test.json && node .test-build/tests/report-pipeline.test.js",
+    "test": "tsc -p tsconfig.test.json && node .test-build/trends/tests/report-pipeline.test.js",
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.agent.json && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.agent.json --noEmit"
   },
   "dependencies": {
     "@openai/agents": "^0.10.1",

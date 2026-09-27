@@ -6,7 +6,7 @@
  * Both point to the same underlying data.
  */
 
-// Inline minimal types (mirrors agents/ai-trends/_types.ts)
+// Inline minimal types (mirrors agents/trends/_types.ts)
 import type { CloudFunctionContext } from '@edgeone/types';
 interface TrendReport {
   runId: string;
@@ -39,8 +39,8 @@ interface HistoryEntry {
   storage?: 'memory' | 'file-fallback' | 'empty';
 }
 
-const REPORT_CONVERSATION_ID = 'ai-trends-reports';
-const REPORT_KIND = 'ai_trends_report';
+const REPORT_CONVERSATION_ID = 'trends-reports';
+const REPORT_KIND = 'trends_report';
 
 interface MemoryMessage {
   messageId?: string;

@@ -1,9 +1,9 @@
 import type { HistoryEntry, TrendReport, TrendSourceItem } from './_types.js';
 
-const REPORT_CONVERSATION_ID = 'ai-trends-reports';
-const ITEM_CONVERSATION_ID = 'ai-trends-items';
-const REPORT_KIND = 'ai_trends_report';
-const ITEM_SNAPSHOT_KIND = 'ai_trends_item_snapshot';
+const REPORT_CONVERSATION_ID = 'trends-reports';
+const ITEM_CONVERSATION_ID = 'trends-items';
+const REPORT_KIND = 'trends_report';
+const ITEM_SNAPSHOT_KIND = 'trends_item_snapshot';
 
 interface MemoryMessage {
   messageId?: string;

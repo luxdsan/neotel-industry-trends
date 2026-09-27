@@ -17,7 +17,7 @@
     {
       "name": "ai-trends-periodic",
       "cron": "0 9 * * *",
-      "path": "/ai-trends/run",
+      "path": "/trends/run",
       "payload": {
         "_schedule": true,
         "trigger": "schedule",
