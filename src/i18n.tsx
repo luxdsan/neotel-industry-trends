@@ -5,10 +5,10 @@ export type Locale = 'zh' | 'en';
 const translations = {
   zh: {
     // Header
-    eyebrow: 'AI Trends Monitor',
-    title: 'AI 热点汇总',
-    subtitle: '按计划采集公开技术资讯，沉淀为可追溯的 AI 趋势报告。',
-    scheduleHint: '每日 9:00 自动采集',
+    eyebrow: 'PCB / SMT Industry Radar',
+    title: 'PCB/SMT 行业趋势',
+    subtitle: '按计划采集 PCB / SMT / EMS 行业公开资讯，沉淀为可追溯的行业趋势报告（AI 摘要，以原文为准）。',
+    scheduleHint: '每日 09:00（北京时间）自动采集 · 周五 10:00 周报',
     generate: '手动生成',
     generating: '生成中...',
     stop: '停止',
@@ -41,7 +41,7 @@ const translations = {
     newItems: '新增资讯',
     recurring: '持续关注',
     emptyFeed: '暂无资讯明细，点击"手动生成"后会在这里展示。',
-    noNewBanner: '本次未发现新的 AI 动态，以下为最近仍值得关注的资讯。',
+    noNewBanner: '今日无新增，以下为近期仍值得关注的资讯。',
     sourceLabel: '源站',
     score: 'score',
 
@@ -83,8 +83,8 @@ const translations = {
     reportTitle: '趋势报告',
 
     // Onboarding
-    onboardingTitle: '开始你的第一份 AI 趋势报告',
-    onboardingDesc: '从 Hacker News、Dev.to、36kr 等公开技术资讯中聚合最新 AI 动态，通过 4 步 Agent 流水线（采集 → 策展 → 摘要 → 分析）输出可追溯的趋势报告。',
+    onboardingTitle: '开始你的第一份行业趋势报告',
+    onboardingDesc: '从 CPCA、中国电子报、SMT007、EMSNOW、设备厂商新闻室、展会官网等公开来源聚合 PCB / SMT / EMS 行业资讯，通过 4 步 Agent 流水线（采集 → 策展 → 摘要 → 分析）输出可追溯的趋势报告。',
     onboardingFeature1: '多源采集',
     onboardingFeature2: '智能聚类',
     onboardingFeature3: '持续追踪',
@@ -109,15 +109,15 @@ const translations = {
 
     // Deploy FAB
     deployButton: '一键部署',
-    deployDesc: '使用 {link} 部署你自己的 AI 趋势监控站点，全球 CDN 加速，完全免费。',
+    deployDesc: '使用 {link} 部署你自己的行业趋势监控站点。',
     deployLink: 'EdgeOne Makers',
   },
   en: {
     // Header
-    eyebrow: 'AI Trends Monitor',
-    title: 'AI Trends Summary',
-    subtitle: 'Automatically crawl, curate, and summarize AI industry news into traceable trend reports.',
-    scheduleHint: 'Daily at 1:00 UTC',
+    eyebrow: 'PCB / SMT Industry Radar',
+    title: 'PCB/SMT Industry Trends',
+    subtitle: 'Automatically collect, curate and summarize public PCB / SMT / EMS industry news into traceable trend reports (AI summaries — refer to the source).',
+    scheduleHint: 'Daily 09:00 Asia/Shanghai · weekly roll-up Fri 10:00',
     generate: 'Generate',
     generating: 'Generating...',
     stop: 'Stop',
@@ -150,7 +150,7 @@ const translations = {
     newItems: 'New Items',
     recurring: 'Ongoing',
     emptyFeed: 'No items yet. Click "Generate" to start.',
-    noNewBanner: 'No new AI trends found this time. Here are recent items still worth noting.',
+    noNewBanner: 'No new items today. Here are recent items still worth noting.',
     sourceLabel: 'Source',
     score: 'score',
 
@@ -192,8 +192,8 @@ const translations = {
     reportTitle: 'Trend Report',
 
     // Onboarding
-    onboardingTitle: 'Generate Your First AI Trend Report',
-    onboardingDesc: 'Aggregate the latest AI news from Hacker News, Dev.to, 36kr and more through a 4-step Agent pipeline (Collect → Curate → Summarize → Analyze) into a traceable trend report.',
+    onboardingTitle: 'Generate Your First Industry Trend Report',
+    onboardingDesc: 'Aggregate PCB / SMT / EMS news from CPCA, SMT007, EMSNOW, equipment-vendor newsrooms and trade-show sites through a 4-step Agent pipeline (Collect → Curate → Summarize → Analyze) into a traceable trend report.',
     onboardingFeature1: 'Multi-source',
     onboardingFeature2: 'Smart Clustering',
     onboardingFeature3: 'Continuous Tracking',
@@ -218,7 +218,7 @@ const translations = {
 
     // Deploy FAB
     deployButton: 'Deploy',
-    deployDesc: 'Deploy your own AI trend monitor with {link} — lightning-fast global CDN, completely free.',
+    deployDesc: 'Deploy your own industry trend monitor with {link}.',
     deployLink: 'EdgeOne Makers',
   },
 } as const;
@@ -238,7 +238,7 @@ const I18nContext = createContext<{
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocale] = useState<Locale>(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('ai-trends-locale');
+      const saved = localStorage.getItem('trends-locale');
       if (saved === 'en' || saved === 'zh') return saved;
     }
     return 'zh';
@@ -247,7 +247,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const toggleLocale = useCallback(() => {
     setLocale(prev => {
       const next = prev === 'zh' ? 'en' : 'zh';
-      localStorage.setItem('ai-trends-locale', next);
+      localStorage.setItem('trends-locale', next);
       return next;
     });
   }, []);

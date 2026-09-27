@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode, SVGProps } from 'react';
-import { fetchHistory, fetchLatest, fetchReportDetail, runReportSSE, stopReport, deleteReport } from './api';
+import { fetchHistory, fetchLatest, fetchReportDetail, runReportSSE, stopReport, deleteReport, getAdminToken } from './api';
 import { useI18n } from './i18n';
 import MarkdownReport from './MarkdownReport';
 import { EMPTY_REPORT, normalizeReport } from './reportModel';
@@ -31,7 +31,7 @@ function StatusPill({ status }: { status?: string }) {
 
 function itemSummary(item?: TrendItem, fallbackLabel = 'update'): string {
   if (!item) return '';
-  return item.aiSummary?.trim() || item.summary?.trim() || `${item.category || 'AI'} ${fallbackLabel}: ${item.title}`;
+  return item.aiSummary?.trim() || item.summary?.trim() || `${item.category || '行业'} ${fallbackLabel}: ${item.title}`;
 }
 
 function formatItemTime(value?: string, fallbackLabel = 'Unknown'): string {
@@ -39,8 +39,8 @@ function formatItemTime(value?: string, fallbackLabel = 'Unknown'): string {
   return formatTime(value);
 }
 
-const TOPICS = ['AI Agent', 'LLM', 'Multimodal', 'Open Source Model', 'AI Infra'];
-const DEFAULT_SOURCES = ['Hacker News', 'Dev.to'];
+const TOPICS = ['设备', '材料', '供应链', '政策标准', '展会', '厂商动态'];
+const DEFAULT_SOURCE_LABEL = 'CPCA / 中国电子报 / SMT007 / EMSNOW / OEM 新闻室';
 
 const PIPELINE_STAGES = [
   { key: 'fetch', i18nKey: 'stageFetch' as const, parallel: undefined },
@@ -316,7 +316,7 @@ function LiveItemCard({ item, showScore }: { item: LiveItem; showScore: boolean 
         )}
       </div>
       <div className={styles.newsSideMeta}>
-        <span>{item._categoryAssigned || item.category || 'AI'}</span>
+        <span>{item._categoryAssigned || item.category || '行业'}</span>
         {showScore && item.score != null && <span>score {item.score}</span>}
       </div>
     </div>
@@ -452,6 +452,8 @@ export default function App() {
   const [drawerReport, setDrawerReport] = useState<TrendReport | null>(null);
   const [pipelineStages, setPipelineStages] = useState<Record<string, StageState>>({});
   const [drawerLoading, setDrawerLoading] = useState(false);
+  // Delete is only offered when an admin token is stored locally (see api.ts getAdminToken).
+  const [isAdmin] = useState<boolean>(() => Boolean(getAdminToken()));
 
   // Live (during-generation) state — driven by SSE `items` / `analysis` events.
   const [liveItems, setLiveItems] = useState<LiveItem[]>([]);
@@ -726,7 +728,7 @@ export default function App() {
   const newItems = useMemo(() => newsItems.filter(item => item.isNew), [newsItems]);
   const recurringItems = useMemo(() => newsItems.filter(item => !item.isNew), [newsItems]);
   const trendCount = safeReport.trends.length;
-  const sourceNames = useMemo(() => Array.from(new Set(newsItems.map(item => item.source))).join(' / ') || 'Hacker News / Dev.to', [newsItems]);
+  const sourceNames = useMemo(() => Array.from(new Set(newsItems.map(item => item.source))).join(' / ') || DEFAULT_SOURCE_LABEL, [newsItems]);
 
   // After bootstrapping: do we have any content (latest report OR any history)?
   const hasAnyContent = safeReport.status === 'success' || history.length > 0 || newsItems.length > 0;
@@ -738,7 +740,7 @@ export default function App() {
         <a className={styles.deployButton} href={getDeployUrl()} target="_blank" rel="noreferrer">
           <IconRocket size={13} /> {t('deployButton')}
         </a>
-        <a className={styles.topCornerIcon} href="https://github.com/TencentEdgeOne/ai-trends-agent" target="_blank" rel="noreferrer" title="GitHub">
+        <a className={styles.topCornerIcon} href="https://github.com/luxdsan/neotel-industry-trends" target="_blank" rel="noreferrer" title="GitHub">
           <IconGitHub size={16} />
         </a>
         <button className={styles.langToggle} onClick={toggleLocale} title={locale === 'zh' ? 'Switch to English' : '切换为中文'}>
@@ -847,7 +849,7 @@ export default function App() {
                         <p>{itemSummary(item, t('fallbackSummary'))}</p>
                       </div>
                       <div className={styles.newsSideMeta}>
-                        <span>{item.category || 'AI'}</span>
+                        <span>{item.category || '行业'}</span>
                         <span>score {item.score ?? 0}</span>
                         <span>
                           {t('sourceLabel')} <IconExternal size={11} style={{ verticalAlign: '-1px', marginLeft: 2 }} />
@@ -883,7 +885,7 @@ export default function App() {
                         <p>{itemSummary(item, t('fallbackSummary'))}</p>
                       </div>
                       <div className={styles.newsSideMeta}>
-                        <span>{item.category || 'AI'}</span>
+                        <span>{item.category || '行业'}</span>
                         <span>score {item.score ?? 0}</span>
                         <span>
                           {t('sourceLabel')} <IconExternal size={11} style={{ verticalAlign: '-1px', marginLeft: 2 }} />
@@ -967,15 +969,17 @@ export default function App() {
                         {item.newItemCount != null && <span>{item.newItemCount} {t('reportNew')}</span>}
                       </div>
                     </button>
-                    <button
-                      type="button"
-                      className={styles.deleteButton}
-                      title={t('deleteReport')}
-                      aria-label={t('deleteReport')}
-                      onClick={(e) => { e.stopPropagation(); handleDelete(item.runId); }}
-                    >
-                      <IconX size={13} />
-                    </button>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        className={styles.deleteButton}
+                        title={t('deleteReport')}
+                        aria-label={t('deleteReport')}
+                        onClick={(e) => { e.stopPropagation(); handleDelete(item.runId); }}
+                      >
+                        <IconX size={13} />
+                      </button>
+                    )}
                   </div>
                 ))}
                 {!history.filter(item => item.runId !== safeReport.runId).length && safeReport.status !== 'success' && (

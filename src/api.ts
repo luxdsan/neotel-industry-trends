@@ -1,6 +1,30 @@
 import type { HistoryEntry, PipelineEvent, StreamEvent, TrendReport } from './types';
 
 const CONVERSATION_ID = 'trends-dashboard';
+const ADMIN_TOKEN_KEY = 'trends-admin-token';
+
+/**
+ * Admin token for the delete endpoint. Never bundled: the operator opens the dashboard once
+ * with `?admin=<token>` (stored in localStorage, stripped from the URL) or clears it with
+ * `?admin=`. The server compares it with env ADMIN_TOKEN.
+ */
+export function getAdminToken(): string {
+  try {
+    if (typeof window === 'undefined') return '';
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('admin')) {
+      const value = params.get('admin') || '';
+      if (value) localStorage.setItem(ADMIN_TOKEN_KEY, value);
+      else localStorage.removeItem(ADMIN_TOKEN_KEY);
+      params.delete('admin');
+      const rest = params.toString();
+      window.history.replaceState(null, '', `${window.location.pathname}${rest ? `?${rest}` : ''}${window.location.hash}`);
+    }
+    return localStorage.getItem(ADMIN_TOKEN_KEY) || '';
+  } catch {
+    return '';
+  }
+}
 
 export const API = {
   run: '/trends/run',
@@ -34,7 +58,7 @@ export async function runReport(signal?: AbortSignal): Promise<TrendReport> {
     body: JSON.stringify({
       conversation_id: CONVERSATION_ID,
       trigger: 'manual',
-      sources: ['hackernews', 'devto', 'web'],
+      sources: ['all'],
       limit: 30,
     }),
     signal,
@@ -43,7 +67,8 @@ export async function runReport(signal?: AbortSignal): Promise<TrendReport> {
 }
 
 export async function fetchLatest(): Promise<TrendReport> {
-  const res = await fetch(API.latest, { method: 'GET' });
+  // Dashboard shows whichever report is newest (daily or weekly); the WP sync tool uses kind=daily.
+  const res = await fetch(`${API.latest}?kind=any`, { method: 'GET' });
   return parseJson<TrendReport>(res);
 }
 
@@ -86,7 +111,7 @@ export async function runReportSSE(
     body: JSON.stringify({
       conversation_id: CONVERSATION_ID,
       trigger: 'manual',
-      sources: ['hackernews', 'devto', 'web'],
+      sources: ['all'],
       limit: 30,
     }),
     signal,
@@ -180,9 +205,11 @@ export async function stopReport(): Promise<boolean> {
 
 export async function deleteReport(runId: string): Promise<boolean> {
   try {
+    const token = getAdminToken();
+    if (!token) return false;
     const res = await fetch(API.delete, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
       body: JSON.stringify({ runId }),
     });
     return res.ok;

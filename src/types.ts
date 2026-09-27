@@ -25,6 +25,9 @@ export interface TrendGroup {
 export interface TrendReport {
   runId?: string;
   status: 'success' | 'failed' | 'empty' | string;
+  kind?: 'daily' | 'weekly';
+  /** Plan §4 structured contract (see schema.json) — read by the WordPress sync tool. */
+  brief?: unknown;
   trigger?: string;
   generatedAt?: string;
   durationMs?: number;
@@ -45,6 +48,7 @@ export interface TrendReport {
 export interface HistoryEntry {
   runId?: string;
   status?: string;
+  kind?: 'daily' | 'weekly';
   trigger?: string;
   generatedAt?: string;
   itemCount?: number;
@@ -64,7 +68,7 @@ export interface PipelineEvent {
 }
 
 // ── Streaming Event Schema ────────────────────────────────────────
-// Mirrors `agents/ai-trends/_types.ts → StreamEvent`.
+// Mirrors `agents/trends/_types.ts → StreamEvent`.
 
 export type StageKey = 'fetch' | 'curator' | 'summarizer' | 'analyst' | 'writer';
 export type StageStatus = 'running' | 'done' | 'failed' | 'skipped';
