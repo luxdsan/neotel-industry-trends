@@ -35,7 +35,8 @@ export async function onRequest(context: AgentContext): Promise<Response> {
       const heartbeat = setInterval(() => emit({ stage: 'heartbeat', t: Date.now() - started }), 15000);
       try {
         emit({ stage: 'fetch', status: 'running', companies: companies.length, windowDays });
-        const previous = await loadLatestListedFromMemory(context).catch(() => null) as ListedDoc | null;
+        // body.reset=true → ignore the stored doc (after a registry/filter change); every item is treated as new
+        const previous = body.reset ? null : await loadLatestListedFromMemory(context).catch(() => null) as ListedDoc | null;
         const known = new Set((previous?.items || []).map(i => i.id));
         const { items, bySource, errors } = await collectListed(windowDays, companies, (msg) => emit({ stage: 'fetch', status: 'running', detail: msg }));
         const fresh = items.filter(i => !known.has(i.id));

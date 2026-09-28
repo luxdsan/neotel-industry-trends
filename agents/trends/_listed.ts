@@ -79,11 +79,15 @@ const RE_CAPACITY = /扩产|产能|新建|投资建设|生产基地|项目投产
 const RE_NOISE = /减持|增持计划|股权激励|回购|解除限售|解禁|董事会决议|监事会|股东会|股东大会|独立董事|律师事务所|法律意见|关联交易|担保|理财|募集资金|存放|自查|问询函|回复|简式权益|变更注册资本|公司章程|辞职|聘任|选举|会计政策|审计|议事规则|制度|投资者关系活动|说明会|停牌|复牌|异常波动|风险提示|可转债|转股价|付息|派息|分红|利润分配|除权|质押|冻结|诉讼|仲裁|更名|证券简称|自愿性?信息披露暂缓|重大资产重组进展|专项|监管|处罚|警示|限制性股票|期权|激励对象|自愿性披露|ESG|环境、社会及管治|environmental, social|次第|list of directors|monthly return|翌日披露|next day disclosure|forms? of proxy|notice of (annual|extraordinary) general|circular|通函|代表委任|会议通告|constitution|memorandum/i;
 
 // personnel / governance news is low value for this audience (readers want orders, capacity, results, products)
-const RE_PERSONNEL = /\bhires?\b|\bappoints?\b|\bappointed\b|\bnames? .* as\b|\bjoins\b|\bpromotes?\b|\bretire|board of directors|\bdirector\b|\bCFO\b|\bCEO\b|\bCOO\b|chief (financial|executive|operating)|任命|聘任|离任|退休|加入.*(担任|出任)|出任/i;
+const RE_PERSONNEL = /\bhires?\b|\bhired\b|\bappoint(s|ed|ment|ments)?\b|\bnames? .* as\b|\bjoins\b|\bpromotes?\b|\bpromotion\b|\bretire|board of directors|\bdirector\b|\bCFO\b|\bCEO\b|\bCOO\b|chief (financial|executive|operating|commercial)|\bpresident\b|任命|聘任|离任|退休|加入.*(担任|出任)|出任|履新/i;
+
+// financing / shareholder housekeeping — real disclosures, but not what a factory reader comes for
+const RE_LOWVALUE = /\bdividend|股息|派息|senior notes|票据|term loan|credit (facility|agreement)|贷款|debt offering|shelf registration|share repurchase|buyback|回购|stock split|拆股|annual meeting|股东大会|proxy|notification letter|non-registered|publication of|letter to (registered|non-registered)|website version|电子通讯|corporate communications/i;
 
 function classify(title: string, platform: string, form?: string): ListedKind | null {
   const t = title || '';
   if (RE_PERSONNEL.test(t) && !RE_REPORT.test(t) && !RE_CAPACITY.test(t)) return null;
+  if (RE_LOWVALUE.test(t) && !RE_REPORT.test(t.replace(/interim report|annual report/i, ''))) return null;
   if (platform === 'cninfo' || platform === 'hkex') {
     if (RE_NOISE.test(t)) return null;
     if (RE_PREVIEW.test(t)) return 'preview';
@@ -199,7 +203,9 @@ async function edgarPressRelease(indexUrl: string): Promise<{ url: string; text:
     const url = new URL(href.replace('/ix?doc=', ''), 'https://www.sec.gov').href;
     const html = await fetchText(url, { headers: EDGAR_HEADERS }, 25000);
     const text = cleanText(html.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi, ' '))
-      .replace(/^EX-99\.\d+\s+\d+\s+\S+\.htm[l]?\s+EX-99\.\d+\s+Document\s*/i, '')   // SEC SGML header line
+      // SEC SGML header line: "EX-99.1 2 file.htm EX-99.1 Document" / "… EXHIBIT 99.1 Exhibit 99.1 FOR IMMEDIATE RELEASE"
+      .replace(/^EX-99\.\d+\s+\d+\s+\S+\.htm[l]?\s+(?:(?:EX-99\.\d+|EXHIBIT\s+99\.\d+|Exhibit\s+99\.\d+|Document)\s+)*/i, '')
+      .replace(/^(?:FOR IMMEDIATE RELEASE|PRESS RELEASE|NEWS RELEASE)\s*:?\s*/i, '')
       .slice(0, 7000);
     return { url, text };
   }
@@ -227,7 +233,7 @@ async function collectEdgar(c: ListedCompany, since: Date): Promise<ListedItem[]
           title = head.length > 20 ? head.slice(0, 110) : title;
           // the atom title is always "8-K - Current report": classify on the press-release headline instead
           if (RE_REPORT.test(head)) kind = 'report'; else if (RE_CAPACITY.test(head)) kind = 'capacity';
-          else if (RE_PERSONNEL.test(head)) continue;   // appointments / board changes
+          else if (RE_PERSONNEL.test(head) || RE_LOWVALUE.test(head)) continue;   // appointments / dividends / financing
         } catch (err) { console.warn(`[listed] edgar exhibit ${c.id}:`, err instanceof Error ? err.message : err); continue; }
         await sleep(350);                   // SEC fair-use: < 10 req/s
       }
@@ -332,8 +338,11 @@ export async function summariseNew(items: ListedItem[], env: Record<string, stri
   const order = [...items].sort((a, b) => Number(!!b.text && b.text.length > 200) - Number(!!a.text && a.text.length > 200));
   for (const it of order) {
     if (it.summaryZh) continue;
-    const body = (it.text || '').trim();
-    if (!body || body.length < 80 || calls >= maxCalls) { it.summaryZh = fallbackSummary(it); continue; }
+    let body = (it.text || '').trim();
+    // A-share 产能/订单/预告 announcements are PDFs (no text) but their titles carry the gist → ask for the 解读 on the title alone
+    const titleOnly = !body && (it.kind === 'capacity' || it.kind === 'preview') && it.title.length >= 10;
+    if (titleOnly) body = `（仅有公告标题，无正文；摘要只能复述标题，不得添加数字）${it.title}`;
+    if (!body || (!titleOnly && body.length < 80) || calls >= maxCalls) { it.summaryZh = fallbackSummary(it); continue; }
     try {
       const res = await client.chat.completions.create({
         model: opts.model, temperature: 0.3, response_format: { type: 'json_object' } as any,
@@ -365,8 +374,17 @@ const CAP: Record<Tier, number> = { equip: 12, ems: 10, comp: 8 };
 export function buildListedDoc(runId: string, fresh: ListedItem[], previous: ListedDoc | null, windowDays: number, bySource: Record<string, number>, errors: string[], modelCalls: number): ListedDoc {
   const since = ymd(daysAgo(windowDays));
   const byId = new Map<string, ListedItem>();
-  for (const p of previous?.items || []) if (p.date >= since) byId.set(p.id, p);
+  const names = new Set(LISTED_COMPANIES.map(c => c.name));
+  for (const p of previous?.items || []) {
+    if (p.date < since || !names.has(p.company)) continue;
+    // re-apply TODAY's rules to yesterday's items (filters and the registry change over time)
+    const platform = p.source === '巨潮资讯' ? 'cninfo' : p.source === 'HKEXnews' ? 'hkex' : p.source === 'SEC EDGAR' ? 'edgar' : 'rss';
+    const k = platform === 'edgar' ? (RE_PERSONNEL.test(p.title) || RE_LOWVALUE.test(p.title) ? null : p.kind) : classify(p.title, platform);
+    if (!k) continue;
+    byId.set(p.id, { ...p, kind: k });
+  }
   for (const f of fresh) { const prev = byId.get(f.id); byId.set(f.id, { ...f, summaryZh: f.summaryZh || prev?.summaryZh || '', note: f.note || prev?.note || '', tool: f.tool || prev?.tool || '', toolHref: f.toolHref || prev?.toolHref, toolLabel: f.toolLabel || prev?.toolLabel, text: undefined }); }
+  for (const i of byId.values()) if (!i.summaryZh) i.summaryZh = fallbackSummary(i);
   const all = [...byId.values()].sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0));
   const perTier: Record<Tier, number> = { equip: 0, ems: 0, comp: 0 };
   const perCompany: Record<string, number> = {};
