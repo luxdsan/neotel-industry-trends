@@ -135,3 +135,13 @@ DB. Redeploys/region moves may lose history. WordPress is the archive of record.
 7. **Sandbox availability in 全球可用区** for `sandbox.browser` is assumed from the template; if absent the
    code falls back to plain `fetch()` (JS-rendered lists like 集微网 will return 0 items).
 8. Upstream `npm test` was broken (referenced a non-existent export) — fixed here; consider a PR upstream.
+
+## Listed-company collector (`POST /trends/listed`, added 2026-09-28)
+
+- **What**: 31 listed companies in 3 tiers (`agents/trends/_listed_companies.ts`): A-share announcements via 巨潮资讯 (code+orgId), HKEXnews title search (stockId), SEC EDGAR atom by ticker (8-K press release EX-99.1 is read and summarised; 10-Q/10-K listed), Koh Young RSS, Fuji newsroom (current-year page). Only 定期报告 / 业绩预告快报 / 产能·订单·投资 / official news; personnel, dividends, financing, governance and HKEX housekeeping are dropped in code.
+- **When**: schedule `listed-daily` 09:20 Asia/Shanghai (edgeone.json), 45-day window, ≤20 model calls per run (only items with body text, plus title-only calls for A-share 产能/预告 to get a 挚锦解读). Stored in memory conversation `trends-listed`, one message per run; 30/45-day merge, cap 12/10/8 per tier and 3 per company.
+- **Served**: `GET /trends/latest?brief=1` → `listed` (the CN syncer renders sentinel `nt-trend:listed` on /blog/industry-news); `GET /trends/latest?listed=1` → the doc alone.
+- **Manual run**: `curl -N -X POST https://trends.neotel.tech/trends/listed -H 'Content-Type: application/json' -H 'makers-conversation-id: nt-listed-manual-1' -d '{"windowDays":45,"maxModelCalls":20,"reset":false}'` — agent routes need the `makers-conversation-id` header. The SSE stream may be cut by the edge on long runs; the run continues server-side, so poll `?listed=1` for a newer `generatedAt` (CN box helper: `/root/nt-trend/run_listed_first.sh 45 20 [true]`; `true` = `reset`, use after registry/filter changes).
+- **Policy**: competitor-flagged companies (JFE rule) never get a note; summaries ≤80 chars, facts and periods from the source only; `_policy.ts` checks re-applied after the model.
+- **Local smoke**: `npx tsc -p tsconfig.test.json && node .test-build/trends/tests/listed-smoke.js "快克智能,Nordson"` (set `SMOKE_MODEL_CALLS=2` + `LLM_API_KEY/LLM_BASE_URL/LLM_MODEL` to exercise the summariser).
+- **Phase 2**: DART (Koh Young/Hanwha/三星电机) and EDINET (Fuji/村田/TDK) APIs (free keys), Taiwan MOPS, Mycronic newsroom (Cision feed dead since 2023), PDF text for A-share reports, quarterly 财报速览 table + PDF asset.
