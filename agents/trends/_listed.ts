@@ -76,7 +76,7 @@ const RE_REPORT = /年度报告|半年度报告|季度报告|年报|半年报|�
 const RE_PREVIEW = /业绩预告|业绩快报|盈利预告|盈利警告|profit warning|guidance/i;
 const RE_CAPACITY = /扩产|产能|新建|投资建设|生产基地|项目投产|中标|重大合同|订单|签订|投资协议|收购|战略合作|新工厂|新厂|capacity|expansion|new facility|new plant|acquisition|acquire|contract award|order|investment|opens|opening|groundbreaking|manufacturing site/i;
 // A-share announcement noise we never show
-const RE_NOISE = /减持|增持计划|股权激励|回购|解除限售|解禁|董事会决议|监事会|股东会|股东大会|独立董事|律师事务所|法律意见|关联交易|担保|理财|募集资金|存放|自查|问询函|回复|简式权益|变更注册资本|公司章程|辞职|聘任|选举|会计政策|审计|议事规则|制度|投资者关系活动|说明会|停牌|复牌|异常波动|风险提示|可转债|转股价|付息|派息|分红|利润分配|除权|质押|冻结|诉讼|仲裁|更名|证券简称|自愿性?信息披露暂缓|重大资产重组进展|专项|监管|处罚|警示|限制性股票|期权|激励对象|自愿性披露|ESG|环境、社会及管治|environmental, social|次第|list of directors|monthly return|翌日披露|next day disclosure|forms? of proxy|notice of (annual|extraordinary) general|circular|通函|代表委任|会议通告|constitution|memorandum/i;
+const RE_NOISE = /提示性公告|披露的提示|减持|增持计划|股权激励|回购|解除限售|解禁|董事会决议|监事会|股东会|股东大会|独立董事|律师事务所|法律意见|关联交易|担保|理财|募集资金|存放|自查|问询函|回复|简式权益|变更注册资本|公司章程|辞职|聘任|选举|会计政策|审计|议事规则|制度|投资者关系活动|说明会|停牌|复牌|异常波动|风险提示|可转债|转股价|付息|派息|分红|利润分配|除权|质押|冻结|诉讼|仲裁|更名|证券简称|自愿性?信息披露暂缓|重大资产重组进展|专项|监管|处罚|警示|限制性股票|期权|激励对象|自愿性披露|ESG|环境、社会及管治|environmental, social|次第|list of directors|monthly return|翌日披露|next day disclosure|forms? of proxy|notice of (annual|extraordinary) general|circular|通函|代表委任|会议通告|constitution|memorandum/i;
 
 // personnel / governance news is low value for this audience (readers want orders, capacity, results, products)
 const RE_PERSONNEL = /\bhires?\b|\bhired\b|\bappoint(s|ed|ment|ments)?\b|\bnames? .* as\b|\bjoins\b|\bpromotes?\b|\bpromotion\b|\bretire|board of directors|\bdirector\b|\bCFO\b|\bCEO\b|\bCOO\b|chief (financial|executive|operating|commercial)|\bpresident\b|任命|聘任|离任|退休|加入.*(担任|出任)|出任|履新/i;
@@ -248,11 +248,14 @@ async function collectEdgar(c: ListedCompany, since: Date): Promise<ListedItem[]
 // ── RSS / newsroom pages ─────────────────────────────────────────────────────
 async function collectRssCompany(c: ListedCompany, since: Date): Promise<ListedItem[]> {
   const xml = await fetchText(c.id);
-  return parseFeed(xml, c.id).filter(e => !e.publishedAt || e.publishedAt.slice(0, 10) >= ymd(since)).slice(0, 15).map(e => {
-    const kind = classify(e.title, 'rss') || 'news';
-    return { id: itemId('rss', e.url), company: c.name, tier: c.tier, kind, title: e.title, url: e.url, date: (e.publishedAt || new Date().toISOString()).slice(0, 10),
-      source: SOURCE_LABEL.rss, summaryZh: '', note: '', tool: '', competitor: !!c.competitor, text: e.summary || '' } as ListedItem;
-  });
+  const out: ListedItem[] = [];
+  for (const e of parseFeed(xml, c.id).filter(e => !e.publishedAt || e.publishedAt.slice(0, 10) >= ymd(since)).slice(0, 15)) {
+    const kind = classify(e.title, 'rss');   // null = personnel / low-value → dropped (no 'news' fallback)
+    if (!kind) continue;
+    out.push({ id: itemId('rss', e.url), company: c.name, tier: c.tier, kind, title: e.title, url: e.url, date: (e.publishedAt || new Date().toISOString()).slice(0, 10),
+      source: SOURCE_LABEL.rss, summaryZh: '', note: '', tool: '', competitor: !!c.competitor, text: e.summary || '' });
+  }
+  return out;
 }
 
 async function collectPage(c: ListedCompany, linkPattern: string, since: Date, limit = 12): Promise<ListedItem[]> {
