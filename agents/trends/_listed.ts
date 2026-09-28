@@ -268,10 +268,13 @@ async function collectPage(c: ListedCompany, linkPattern: string, limit = 12): P
 }
 
 // ── orchestration ────────────────────────────────────────────────────────────
-export async function collectListed(windowDays = 30, companies: ListedCompany[] = LISTED_COMPANIES): Promise<{ items: ListedItem[]; bySource: Record<string, number>; errors: string[] }> {
+export async function collectListed(windowDays = 30, companies: ListedCompany[] = LISTED_COMPANIES, onProgress?: (msg: string) => void): Promise<{ items: ListedItem[]; bySource: Record<string, number>; errors: string[] }> {
   const since = daysAgo(windowDays);
   const items: ListedItem[] = []; const errors: string[] = []; const bySource: Record<string, number> = {};
+  let n = 0;
   for (const c of companies) {
+    n++;
+    if (onProgress && (n % 5 === 0 || n === companies.length)) onProgress(`${n}/${companies.length} ${c.name}`);
     try {
       let got: ListedItem[] = [];
       if (c.platform === 'cninfo') got = await collectCninfo(c, since);
