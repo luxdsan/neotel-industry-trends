@@ -31,7 +31,7 @@ export const LISTED_COMPANIES: ListedCompany[] = [
   { name: 'Camtek', tier: 'equip', platform: 'edgar', id: 'CAMT', note: '检测' },
   { name: '快克智能', tier: 'equip', platform: 'cninfo', id: '603203', note: '焊接/精密装联设备' },
   { name: '劲拓股份', tier: 'equip', platform: 'cninfo', id: '300400', note: '回流焊/波峰焊' },
-  { name: '凯格精机', tier: 'equip', platform: 'cninfo', id: '301238', note: '锡膏印刷机' },
+  { name: '凯格精机', tier: 'equip', platform: 'cninfo', id: '301338', note: '锡膏印刷机' },   // 301238 = 瑞泰新材 (verified against cninfo list 2026-09-28)
   { name: '矩子科技', tier: 'equip', platform: 'cninfo', id: '300802', note: 'AOI/机器视觉' },
   { name: '华兴源创', tier: 'equip', platform: 'cninfo', id: '688001', note: '检测设备' },
   { name: '大族激光', tier: 'equip', platform: 'cninfo', id: '002008', note: '激光/PCB 设备' },

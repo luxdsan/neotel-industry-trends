@@ -36,7 +36,7 @@
       "payload": {
         "_schedule": true,
         "trigger": "schedule",
-        "windowDays": 30,
+        "windowDays": 45,
         "maxModelCalls": 20
       }
     },

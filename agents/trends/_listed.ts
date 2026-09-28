@@ -78,8 +78,12 @@ const RE_CAPACITY = /扩产|产能|新建|投资建设|生产基地|项目投产
 // A-share announcement noise we never show
 const RE_NOISE = /减持|增持计划|股权激励|回购|解除限售|解禁|董事会决议|监事会|股东会|股东大会|独立董事|律师事务所|法律意见|关联交易|担保|理财|募集资金|存放|自查|问询函|回复|简式权益|变更注册资本|公司章程|辞职|聘任|选举|会计政策|审计|议事规则|制度|投资者关系活动|说明会|停牌|复牌|异常波动|风险提示|可转债|转股价|付息|派息|分红|利润分配|除权|质押|冻结|诉讼|仲裁|更名|证券简称|自愿性?信息披露暂缓|重大资产重组进展|专项|监管|处罚|警示|限制性股票|期权|激励对象|自愿性披露|ESG|环境、社会及管治|environmental, social|次第|list of directors|monthly return|翌日披露|next day disclosure|forms? of proxy|notice of (annual|extraordinary) general|circular|通函|代表委任|会议通告|constitution|memorandum/i;
 
+// personnel / governance news is low value for this audience (readers want orders, capacity, results, products)
+const RE_PERSONNEL = /\bhires?\b|\bappoints?\b|\bappointed\b|\bnames? .* as\b|\bjoins\b|\bpromotes?\b|\bretire|board of directors|\bdirector\b|\bCFO\b|\bCEO\b|\bCOO\b|chief (financial|executive|operating)|任命|聘任|离任|退休|加入.*(担任|出任)|出任/i;
+
 function classify(title: string, platform: string, form?: string): ListedKind | null {
   const t = title || '';
+  if (RE_PERSONNEL.test(t) && !RE_REPORT.test(t) && !RE_CAPACITY.test(t)) return null;
   if (platform === 'cninfo' || platform === 'hkex') {
     if (RE_NOISE.test(t)) return null;
     if (RE_PREVIEW.test(t)) return 'preview';
@@ -223,6 +227,7 @@ async function collectEdgar(c: ListedCompany, since: Date): Promise<ListedItem[]
           title = head.length > 20 ? head.slice(0, 110) : title;
           // the atom title is always "8-K - Current report": classify on the press-release headline instead
           if (RE_REPORT.test(head)) kind = 'report'; else if (RE_CAPACITY.test(head)) kind = 'capacity';
+          else if (RE_PERSONNEL.test(head)) continue;   // appointments / board changes
         } catch (err) { console.warn(`[listed] edgar exhibit ${c.id}:`, err instanceof Error ? err.message : err); continue; }
         await sleep(350);                   // SEC fair-use: < 10 req/s
       }
@@ -244,7 +249,7 @@ async function collectRssCompany(c: ListedCompany, since: Date): Promise<ListedI
   });
 }
 
-async function collectPage(c: ListedCompany, linkPattern: string, limit = 12): Promise<ListedItem[]> {
+async function collectPage(c: ListedCompany, linkPattern: string, since: Date, limit = 12): Promise<ListedItem[]> {
   // Fuji's /en/news/ is only an index of year pages → read the current year's list
   const pageUrl = c.platform === 'page_fuji' ? `${c.id.replace(/\/?$/, '/')}${new Date().getFullYear()}/` : c.id;
   const html = await fetchText(pageUrl);
@@ -260,7 +265,9 @@ async function collectPage(c: ListedCompany, linkPattern: string, limit = 12): P
       const um = a.url.match(/(20\d{2})(\d{2})(\d{2})\.html|\/(20\d{2})[/-](\d{2})(?:[/-](\d{2}))?/);
       date = um ? (um[1] ? `${um[1]}-${um[2]}-${um[3]}` : `${um[4]}-${um[5]}-${um[6] || '01'}`) : ymd(new Date());
     }
-    const kind = classify(title, c.platform) || 'news';
+    if (date < ymd(since)) continue;
+    const kind = classify(title, c.platform);
+    if (!kind) continue;
     out.push({ id: itemId(c.platform, a.url), company: c.name, tier: c.tier, kind, title, url: a.url, date, source: SOURCE_LABEL[c.platform],
       summaryZh: '', note: '', tool: '', competitor: !!c.competitor, text: '' });
   }
@@ -281,8 +288,8 @@ export async function collectListed(windowDays = 30, companies: ListedCompany[] 
       else if (c.platform === 'hkex') got = await collectHkex(c, since);
       else if (c.platform === 'edgar') got = await collectEdgar(c, since);
       else if (c.platform === 'rss') got = await collectRssCompany(c, since);
-      else if (c.platform === 'page_fuji') got = await collectPage(c, '/en/news/\\d{4}|/en/news/[a-z0-9_-]+\\.html');
-      else if (c.platform === 'page_cision') got = await collectPage(c, 'news\\.cision\\.com/mycronic-ab/r/');
+      else if (c.platform === 'page_fuji') got = await collectPage(c, '/en/news/\\d{4}|/en/news/[a-z0-9_-]+\\.html', since);
+      else if (c.platform === 'page_cision') got = await collectPage(c, 'news\\.cision\\.com/mycronic-ab/r/', since);
       bySource[c.platform] = (bySource[c.platform] || 0) + got.length;
       items.push(...got);
       await sleep(c.platform === 'cninfo' ? 600 : 300);
@@ -362,6 +369,12 @@ export function buildListedDoc(runId: string, fresh: ListedItem[], previous: Lis
   for (const f of fresh) { const prev = byId.get(f.id); byId.set(f.id, { ...f, summaryZh: f.summaryZh || prev?.summaryZh || '', note: f.note || prev?.note || '', tool: f.tool || prev?.tool || '', toolHref: f.toolHref || prev?.toolHref, toolLabel: f.toolLabel || prev?.toolLabel, text: undefined }); }
   const all = [...byId.values()].sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0));
   const perTier: Record<Tier, number> = { equip: 0, ems: 0, comp: 0 };
-  const items = all.filter(i => { if (perTier[i.tier] >= CAP[i.tier]) return false; perTier[i.tier]++; return true; }).map(i => ({ ...i, text: undefined }));
+  const perCompany: Record<string, number> = {};
+  const PER_COMPANY = 3;   // no single newsroom may flood the block
+  const items = all.filter(i => {
+    if (perTier[i.tier] >= CAP[i.tier]) return false;
+    if ((perCompany[i.company] || 0) >= PER_COMPANY) return false;
+    perTier[i.tier]++; perCompany[i.company] = (perCompany[i.company] || 0) + 1; return true;
+  }).map(i => ({ ...i, text: undefined }));
   return { kind: 'listed', runId, generatedAt: new Date().toISOString(), windowDays, companies: LISTED_COMPANIES.length, items, bySource, errors, modelCalls };
 }
