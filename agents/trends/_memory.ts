@@ -181,6 +181,40 @@ export async function loadItemsFromMemory(context: unknown): Promise<TrendSource
   }
 }
 
+// ── Listed-company doc (POST /trends/listed) — its own conversation, one message per run ──
+
+const LISTED_CONVERSATION_ID = 'trends-listed';
+const LISTED_KIND = 'trends_listed';
+
+export async function saveListedToMemory(context: unknown, doc: { runId: string; generatedAt: string; items: unknown[] }): Promise<boolean> {
+  const memory = getMemory(context);
+  if (!memory) return false;
+  await memory.appendMessage({
+    conversationId: LISTED_CONVERSATION_ID,
+    role: 'tool',
+    content: JSON.stringify(doc),
+    metadata: { kind: LISTED_KIND, runId: doc.runId, generatedAt: doc.generatedAt, itemCount: doc.items.length },
+  });
+  return true;
+}
+
+export async function loadLatestListedFromMemory(context: unknown): Promise<unknown | null> {
+  const memory = getMemory(context);
+  if (!memory) return null;
+  try {
+    const messages = await memory.getMessages({ conversationId: LISTED_CONVERSATION_ID, limit: 3, order: 'desc' });
+    for (const message of messages) {
+      if (message.metadata?.kind !== LISTED_KIND) continue;
+      const c = message.content;
+      if (typeof c === 'object' && c !== null) return c;
+      try { return JSON.parse(String(c)); } catch { continue; }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Delete report by runId ──
 
 export async function deleteReportFromMemory(context: unknown, runId: string): Promise<boolean> {

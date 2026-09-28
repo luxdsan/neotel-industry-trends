@@ -28,6 +28,19 @@
       }
     },
     {
+      "name": "listed-daily",
+      "cron": "20 9 * * *",
+      "path": "/trends/listed",
+      "method": "POST",
+      "timezone": "Asia/Shanghai",
+      "payload": {
+        "_schedule": true,
+        "trigger": "schedule",
+        "windowDays": 30,
+        "maxModelCalls": 20
+      }
+    },
+    {
       "name": "weekly-trends",
       "cron": "0 10 * * 5",
       "path": "/trends/weekly",

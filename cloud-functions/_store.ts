@@ -125,6 +125,20 @@ async function loadReports(store: AgentMemoryLike, limit = 30): Promise<TrendRep
 
 export type ReportKind = 'daily' | 'weekly' | 'any';
 
+/** Latest listed-company doc written by POST /trends/listed (conversation `trends-listed`). */
+export async function loadLatestListed(store: AgentMemoryLike): Promise<Record<string, unknown> | null> {
+  try {
+    const messages = await store.getMessages({ conversationId: 'trends-listed', limit: 3, order: 'desc' });
+    for (const message of messages) {
+      if (message.metadata?.kind !== 'trends_listed') continue;
+      const c = message.content;
+      if (typeof c === 'object' && c !== null) return c as Record<string, unknown>;
+      try { return JSON.parse(String(c)) as Record<string, unknown>; } catch { continue; }
+    }
+  } catch { /* store unavailable */ }
+  return null;
+}
+
 /**
  * Latest report. `kind` defaults to 'daily' so the WordPress sync tool never mistakes a
  * Friday weekly roll-up for today's daily brief; pass 'any' for the dashboard behaviour.
