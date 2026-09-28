@@ -38,7 +38,7 @@ export async function onRequest(context: AgentContext): Promise<Response> {
         // body.reset=true → ignore the stored doc (after a registry/filter change); every item is treated as new
         const previous = body.reset ? null : await loadLatestListedFromMemory(context).catch(() => null) as ListedDoc | null;
         const known = new Set((previous?.items || []).map(i => i.id));
-        const { items, bySource, errors } = await collectListed(windowDays, companies, (msg) => emit({ stage: 'fetch', status: 'running', detail: msg }));
+        const { items, bySource, errors } = await collectListed(windowDays, companies, (msg) => emit({ stage: 'fetch', status: 'running', detail: msg }), getEnv(context));
         const fresh = items.filter(i => !known.has(i.id));
         emit({ stage: 'fetch', status: 'done', items: items.length, newItems: fresh.length, bySource, errors, duration: +((Date.now() - started) / 1000).toFixed(1) });
         console.log(`[listed] collected ${items.length} (new ${fresh.length}) from ${companies.length} companies; errors ${errors.length}`);

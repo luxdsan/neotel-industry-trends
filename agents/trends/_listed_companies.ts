@@ -9,7 +9,10 @@
  */
 
 export type Tier = 'equip' | 'ems' | 'comp';
-export type Platform = 'cninfo' | 'hkex' | 'edgar' | 'rss' | 'page_fuji' | 'page_cision';
+export type Platform = 'cninfo' | 'hkex' | 'edgar' | 'dart' | 'rss' | 'page_fuji' | 'page_cision';
+
+/** DART (Korea FSS OpenAPI) corp_code by stock code — resolved once from corpCode.xml on 2026-09-28. Needs env DART_API_KEY. */
+export const DART_CORP_CODE: Record<string, string> = { '098460': '00579999', '012450': '00126566', '009150': '00126371' };
 
 export interface ListedCompany {
   name: string;
@@ -25,6 +28,10 @@ export const LISTED_COMPANIES: ListedCompany[] = [
   { name: 'ASMPT', tier: 'equip', platform: 'hkex', id: '00522', note: 'SMT 解决方案分部（贴片机）' },
   { name: 'Fuji 富士', tier: 'equip', platform: 'page_fuji', id: 'https://www.fuji.co.jp/en/news/', note: '贴片机 NXT' },
   { name: 'Koh Young', tier: 'equip', platform: 'rss', id: 'https://kohyoung.com/en/feed', note: '3D SPI/AOI' },
+  { name: 'Koh Young', tier: 'equip', platform: 'dart', id: '098460', note: 'KOSDAQ filings (corp_code 00579999)' },
+  // Hanwha Aerospace (012450, corp_code 00126566) dropped 2026-09-28: its DART filings are the parent's defence contracts,
+  // not the placement-machine subsidiary (Hanwha Precision Machinery is unlisted) → no signal for SMT readers.
+  { name: '三星电机', tier: 'comp', platform: 'dart', id: '009150', note: 'MLCC 等元器件 (corp_code 00126371)' },
   // Mycronic (competitor): its Cision newsroom stopped in 2023 and mycronic.com has no feed → phase 2 (needs a page scraper w/ cookie wall)
   { name: 'Nordson', tier: 'equip', platform: 'edgar', id: 'NDSN', note: 'SPI/AOI、点胶' },
   { name: 'Kulicke & Soffa', tier: 'equip', platform: 'edgar', id: 'KLIC', note: '贴片/键合设备' },

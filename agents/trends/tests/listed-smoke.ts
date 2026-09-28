@@ -10,7 +10,7 @@ const names = arg ? arg.split(',') : ['快克智能', '环旭电子', 'ASMPT', '
 const companies = LISTED_COMPANIES.filter(c => names.includes(c.name));
 
 const t0 = Date.now();
-const { items, bySource, errors } = await collectListed(60, companies);
+const { items, bySource, errors } = await collectListed(60, companies, undefined, process.env as Record<string, string | undefined>);
 // SMOKE_MODEL_CALLS=n → run the summariser for up to n items with text (needs LLM_API_KEY/LLM_BASE_URL/LLM_MODEL in env)
 const modelCalls = Number(process.env.SMOKE_MODEL_CALLS || 0);
 const calls = modelCalls > 0 ? await summariseNew(items, process.env as Record<string, string | undefined>, modelCalls) : 0;

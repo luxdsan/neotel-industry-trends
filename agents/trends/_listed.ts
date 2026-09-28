@@ -16,7 +16,7 @@ import { OpenAI } from 'openai';
 import { buildOpenAIClientOptions } from './_model.js';
 import { checkNeotelNote, checkSummary, clampSummary } from './_policy.js';
 import { cleanText, extractAnchors, parseFeed } from './_sources.js';
-import { LISTED_COMPANIES, LISTED_TOOLS, type ListedCompany, type Tier } from './_listed_companies.js';
+import { DART_CORP_CODE, LISTED_COMPANIES, LISTED_TOOLS, type ListedCompany, type Tier } from './_listed_companies.js';
 
 export type ListedKind = 'report' | 'preview' | 'capacity' | 'news';
 
@@ -51,7 +51,7 @@ export interface ListedDoc {
 }
 
 const UA = 'Mozilla/5.0 (compatible; NeotelBrief/1.0; +https://www.neotel.tech/blog/industry-news; info@neotel.tech)';
-const SOURCE_LABEL: Record<string, string> = { cninfo: '巨潮资讯', hkex: 'HKEXnews', edgar: 'SEC EDGAR', rss: '官方新闻', page_fuji: '官方新闻', page_cision: '官方新闻' };
+const SOURCE_LABEL: Record<string, string> = { cninfo: '巨潮资讯', hkex: 'HKEXnews', edgar: 'SEC EDGAR', dart: 'DART', rss: '官方新闻', page_fuji: '官方新闻', page_cision: '官方新闻' };
 
 // ── HTTP ──────────────────────────────────────────────────────────────────────
 async function fetchText(url: string, init: RequestInit = {}, timeoutMs = 20000): Promise<string> {
@@ -94,6 +94,13 @@ function classify(title: string, platform: string, form?: string): ListedKind | 
     if (RE_REPORT.test(t)) return 'report';
     if (RE_CAPACITY.test(t)) return 'capacity';
     return null;             // other announcements are noise for this audience
+  }
+  if (platform === 'dart') {
+    // Korean DART report names (report_nm). Everything not listed is shareholder/governance noise.
+    if (/사업보고서|반기보고서|분기보고서/.test(t)) return 'report';
+    if (/잠정.?실적|영업.?실적|실적.?공시/.test(t)) return 'preview';
+    if (/신규시설투자|유형자산.?취득|타법인.?주식.?취득|영업.?양수|공급계약|단일판매|합병|분할|공장|증설/.test(t)) return 'capacity';
+    return null;
   }
   if (platform === 'edgar') {
     if (form === '10-Q' || form === '10-K' || form === '20-F' || form === '40-F') return 'report';
@@ -245,6 +252,31 @@ async function collectEdgar(c: ListedCompany, since: Date): Promise<ListedItem[]
   return out;
 }
 
+// ── DART (Korea FSS OpenAPI) ─────────────────────────────────────────────────
+async function collectDart(c: ListedCompany, since: Date, env: Record<string, string | undefined>): Promise<ListedItem[]> {
+  const key = env.DART_API_KEY;
+  if (!key) throw new Error('DART_API_KEY not set in the Makers project env');
+  const corp = DART_CORP_CODE[c.id];
+  if (!corp) throw new Error(`no corp_code for ${c.id}`);
+  const fmt = (d: Date) => ymd(d).replace(/-/g, '');
+  const q = new URLSearchParams({ crtfc_key: key, corp_code: corp, bgn_de: fmt(since), end_de: fmt(new Date()), page_count: '100' });
+  const raw = await fetchText(`https://opendart.fss.or.kr/api/list.json?${q}`);
+  const j = JSON.parse(raw) as { status: string; message?: string; list?: Array<{ report_nm: string; rcept_no: string; rcept_dt: string; flr_nm?: string }> };
+  if (j.status !== '000' && j.status !== '013') throw new Error(`DART ${j.status} ${j.message || ''}`);   // 013 = no data
+  const out: ListedItem[] = [];
+  for (const r of j.list || []) {
+    if (r.flr_nm && r.flr_nm !== c.name && !/고영|한화에어로스페이스|삼성전기/.test(r.flr_nm)) continue;   // filings BY the company, not by its shareholders
+    const title = cleanText(r.report_nm);
+    const kind = classify(title, 'dart');
+    if (!kind) continue;
+    const url = `https://dart.fss.or.kr/dsaf001/main.do?rcptNo=${r.rcept_no}`;
+    const d = String(r.rcept_dt || '');
+    out.push({ id: itemId('dart', url), company: c.name, tier: c.tier, kind, title, url, date: d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : ymd(new Date()),
+      source: SOURCE_LABEL.dart, summaryZh: '', note: '', tool: '', competitor: !!c.competitor, text: '' });
+  }
+  return out;
+}
+
 // ── RSS / newsroom pages ─────────────────────────────────────────────────────
 async function collectRssCompany(c: ListedCompany, since: Date): Promise<ListedItem[]> {
   const xml = await fetchText(c.id);
@@ -284,7 +316,7 @@ async function collectPage(c: ListedCompany, linkPattern: string, since: Date, l
 }
 
 // ── orchestration ────────────────────────────────────────────────────────────
-export async function collectListed(windowDays = 30, companies: ListedCompany[] = LISTED_COMPANIES, onProgress?: (msg: string) => void): Promise<{ items: ListedItem[]; bySource: Record<string, number>; errors: string[] }> {
+export async function collectListed(windowDays = 30, companies: ListedCompany[] = LISTED_COMPANIES, onProgress?: (msg: string) => void, env: Record<string, string | undefined> = process.env): Promise<{ items: ListedItem[]; bySource: Record<string, number>; errors: string[] }> {
   const since = daysAgo(windowDays);
   const items: ListedItem[] = []; const errors: string[] = []; const bySource: Record<string, number> = {};
   let n = 0;
@@ -296,6 +328,7 @@ export async function collectListed(windowDays = 30, companies: ListedCompany[] 
       if (c.platform === 'cninfo') got = await collectCninfo(c, since);
       else if (c.platform === 'hkex') got = await collectHkex(c, since);
       else if (c.platform === 'edgar') got = await collectEdgar(c, since);
+      else if (c.platform === 'dart') got = await collectDart(c, since, env);
       else if (c.platform === 'rss') got = await collectRssCompany(c, since);
       else if (c.platform === 'page_fuji') got = await collectPage(c, '/en/news/\\d{4}|/en/news/[a-z0-9_-]+\\.html', since);
       else if (c.platform === 'page_cision') got = await collectPage(c, 'news\\.cision\\.com/mycronic-ab/r/', since);
@@ -326,7 +359,25 @@ const SYSTEM = `你是一家 SMT 智能仓储设备公司的行业编辑。读�
 禁止：最/第一/领先/顶级/唯一 等绝对化用语；任何公司之间的比较；试用/报价/联系我们 等销售话术；编造原文没有的数字。
 只输出 JSON：{"summary":"…","note":"…","tool":"…"}`;
 
+/** Korean DART report names → Chinese (used for the fallback summary and as a hint to the model). */
+const KO_ZH: Array<[RegExp, string]> = [
+  [/반기보고서/g, '半年度报告'], [/분기보고서/g, '季度报告'], [/사업보고서/g, '年度报告'],
+  [/연결재무제표기준영업\(잠정\)실적\(공정공시\)/g, '合并报表口径经营（暂定）业绩'], [/영업\(잠정\)실적/g, '经营（暂定）业绩'], [/잠정실적/g, '暂定业绩'],
+  [/신규시설투자등/g, '新设施投资'], [/단일판매ㆍ공급계약체결/g, '签订单笔销售/供货合同'], [/유형자산취득결정/g, '决定取得有形资产'],
+  [/타법인주식및출자증권취득결정/g, '决定取得其他公司股权'], [/\(자율공시\)/g, '（自愿披露）'], [/\(공정공시\)/g, '（公平披露）'],
+  [/\(종속회사의주요경영사항\)/g, '（子公司主要经营事项）'], [/공장/g, '工厂'], [/증설/g, '扩产'],
+];
+function koToZh(t: string): string {
+  let s = t;
+  for (const [re, zh] of KO_ZH) s = s.replace(re, zh);
+  return s.replace(/\s+/g, ' ').trim();
+}
+
 function fallbackSummary(i: ListedItem): string {
+  if (i.source === 'DART') {
+    const zh = koToZh(i.title);
+    return /[가-힣]/.test(zh) ? `发布《${zh}》` : (i.kind === 'report' ? `发布《${zh}》` : `${i.company}公告：${zh}`);
+  }
   if (i.kind === 'report') return i.source === '巨潮资讯' || i.source === 'HKEXnews' ? `发布《${i.title}》` : `提交 ${i.title}`;
   if (i.kind === 'preview') return `发布《${i.title}》`;
   return clampSummary(cleanText(i.title), 60);
@@ -343,8 +394,11 @@ export async function summariseNew(items: ListedItem[], env: Record<string, stri
     if (it.summaryZh) continue;
     let body = (it.text || '').trim();
     // A-share 产能/订单/预告 announcements are PDFs (no text) but their titles carry the gist → ask for the 解读 on the title alone
-    const titleOnly = !body && (it.kind === 'capacity' || it.kind === 'preview') && it.title.length >= 10;
-    if (titleOnly) body = `（仅有公告标题，无正文；摘要只能复述标题，不得添加数字）${it.title}`;
+    const isDart = it.source === 'DART';
+    const titleOnly = !body && ((it.kind === 'capacity' || it.kind === 'preview') && it.title.length >= 10 || isDart);
+    if (titleOnly) body = isDart
+      ? `韩国 DART 公告标题（韩文）：${it.title}\n中文对照：${koToZh(it.title)}\n要求：summary 只写成一句自然的中文，如"${it.company}公告：决定取得有形资产（子公司）"；不要提"无正文""仅有标题""币种未披露"之类的话，不要写公司层级或括号里的英文，不得添加标题没有的数字。`
+      : `公告标题：${it.title}\n要求：只有标题、没有正文；summary 复述标题即可，不要提"无正文"，不得添加数字。`;
     if (!body || (!titleOnly && body.length < 80) || calls >= maxCalls) { it.summaryZh = fallbackSummary(it); continue; }
     try {
       const res = await client.chat.completions.create({
@@ -381,7 +435,7 @@ export function buildListedDoc(runId: string, fresh: ListedItem[], previous: Lis
   for (const p of previous?.items || []) {
     if (p.date < since || !names.has(p.company)) continue;
     // re-apply TODAY's rules to yesterday's items (filters and the registry change over time)
-    const platform = p.source === '巨潮资讯' ? 'cninfo' : p.source === 'HKEXnews' ? 'hkex' : p.source === 'SEC EDGAR' ? 'edgar' : 'rss';
+    const platform = p.source === '巨潮资讯' ? 'cninfo' : p.source === 'HKEXnews' ? 'hkex' : p.source === 'SEC EDGAR' ? 'edgar' : p.source === 'DART' ? 'dart' : 'rss';
     const k = platform === 'edgar' ? (RE_PERSONNEL.test(p.title) || RE_LOWVALUE.test(p.title) ? null : p.kind) : classify(p.title, platform);
     if (!k) continue;
     byId.set(p.id, { ...p, kind: k });
